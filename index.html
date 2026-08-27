@@ -7,10 +7,9 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Gestor de Finanzas</title>
-  <link rel="manifest" href="manifest.json?v=7">
+  <link rel="manifest" href="manifest.json?v=8">
   <meta name="theme-color" content="#007AFF">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Finanzas">
   <link rel="apple-touch-icon" href="icon-192.png">
@@ -38,11 +37,21 @@
       if(box){box.style.display='block';box.textContent='Error: '+e.message+'\n'+(e.filename?(e.filename+':'+e.lineno):'');}
     });
   </script>
-  <script src="app.js?v=7"></script>
+  <script>
+    (function(){
+      var originalCreateElement=React.createElement;
+      React.createElement=function(type,props){
+        var children=Array.prototype.slice.call(arguments,2);
+        if(type === '') type=React.Fragment;
+        return originalCreateElement.apply(React,[type,props].concat(children));
+      };
+    })();
+  </script>
+  <script src="app.js?v=8"></script>
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',function(){
-        navigator.serviceWorker.register('sw.js?v=7',{updateViaCache:'none'}).then(function(reg){return reg.update();}).catch(function(){});
+        navigator.serviceWorker.register('sw.js?v=8',{updateViaCache:'none'}).then(function(reg){return reg.update();}).catch(function(){});
       });
     }
   </script>

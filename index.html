@@ -26,12 +26,11 @@
     .no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}
     button,input,select{font:inherit}
     .tap{transition:transform .12s ease}.tap:active{transform:scale(.97)}
-    select{color:#111827;background-color:#fff;color-scheme:light}
-    select option{color:#111827;background-color:#fff}
-    html.theme-dark select{color:#e5e7eb;background-color:#1e293b;color-scheme:dark}
-    html.theme-dark select option{color:#e5e7eb;background-color:#0f172a}
+    select{color:#111827 !important;background-color:#fff !important;color-scheme:light}
+    select option{color:#111827 !important;background-color:#fff !important}
+    select[class*="bg-slate-800"],select[class*="bg-slate-900"],select[class*="text-slate-200"]{color:#e5e7eb !important;background-color:#1e293b !important;color-scheme:dark}
+    select[class*="bg-slate-800"] option,select[class*="bg-slate-900"] option,select[class*="text-slate-200"] option{color:#e5e7eb !important;background-color:#0f172a !important}
     input[type="month"],input[type="date"]{color-scheme:light}
-    html.theme-dark input[type="month"],html.theme-dark input[type="date"]{color-scheme:dark}
   </style>
 </head>
 <body>

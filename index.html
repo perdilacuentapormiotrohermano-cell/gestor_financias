@@ -15,9 +15,9 @@
 <link rel="apple-touch-icon" href="icon-192.png" />
 <link rel="icon" href="icon-192.png" />
 
-<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js" crossorigin></script>
 <script src="https://cdn.tailwindcss.com"></script>
 
 <style>
@@ -27,9 +27,22 @@
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root">
+  <div style="padding:40px 20px;text-align:center;font-family:sans-serif;color:#888;">Cargando...</div>
+</div>
+<div id="error-box" style="display:none;padding:16px;margin:16px;background:#fff0f0;border:1px solid #ffb3b3;border-radius:12px;color:#a30000;font-family:monospace;font-size:12px;white-space:pre-wrap;"></div>
 
-<script type="text/babel" data-presets="react,stage-3">
+<script>
+  window.addEventListener('error', function (e) {
+    var box = document.getElementById('error-box');
+    if (box) {
+      box.style.display = 'block';
+      box.textContent = 'Error: ' + e.message + '\n' + (e.filename ? (e.filename + ':' + e.lineno) : '');
+    }
+  });
+</script>
+
+<script type="text/babel" data-presets="react">
 const { useState, useEffect, useMemo } = React;
 
 

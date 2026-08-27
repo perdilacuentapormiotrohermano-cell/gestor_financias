@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Gestor de Finanzas</title>
-  <link rel="manifest" href="manifest.json?v=10">
+  <link rel="manifest" href="manifest.json?v=11">
   <meta name="theme-color" content="#007AFF">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -26,64 +26,29 @@
     .no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}
     button,input,select{font:inherit}
     .tap{transition:transform .12s ease}.tap:active{transform:scale(.97)}
-
-    /* Controles en modo claro */
     select{color:#111827 !important;background-color:#f9fafb !important;color-scheme:light}
     select option{color:#111827 !important;background-color:#fff !important}
-
-    /* Controles en modo oscuro manual o automático */
-    .app-dark select,
-    .app-dark select option,
-    .app-dark input[type="month"],
-    .app-dark input[type="date"]{
-      color:#e5e7eb !important;
-      background-color:#1e293b !important;
-      color-scheme:dark !important;
-      -webkit-text-fill-color:#e5e7eb !important;
-    }
+    .app-dark select,.app-dark select option,.app-dark input[type="month"],.app-dark input[type="date"]{color:#e5e7eb !important;background-color:#1e293b !important;color-scheme:dark !important;-webkit-text-fill-color:#e5e7eb !important}
     .app-dark select option{background-color:#0f172a !important;color:#e5e7eb !important}
-
-    /* El selector de mes era el único control que seguía mostrando texto casi invisible. */
-    .app-dark input[type="month"]::-webkit-datetime-edit,
-    .app-dark input[type="date"]::-webkit-datetime-edit{color:#e5e7eb !important}
-    .app-dark input[type="month"]::-webkit-datetime-edit-fields-wrapper,
-    .app-dark input[type="date"]::-webkit-datetime-edit-fields-wrapper{color:#e5e7eb !important}
-    .app-dark input[type="month"]::-webkit-datetime-edit-text,
-    .app-dark input[type="date"]::-webkit-datetime-edit-text{color:#94a3b8 !important}
-    .app-dark input[type="month"]::-webkit-calendar-picker-indicator,
-    .app-dark input[type="date"]::-webkit-calendar-picker-indicator{filter:none;opacity:1}
-
-    @media (prefers-color-scheme: dark){
-      html,body{background:#020617}
-    }
+    .app-dark input[type="month"]::-webkit-datetime-edit,.app-dark input[type="date"]::-webkit-datetime-edit{color:#e5e7eb !important}
+    .app-dark input[type="month"]::-webkit-datetime-edit-fields-wrapper,.app-dark input[type="date"]::-webkit-datetime-edit-fields-wrapper{color:#e5e7eb !important}
+    .app-dark input[type="month"]::-webkit-datetime-edit-text,.app-dark input[type="date"]::-webkit-datetime-edit-text{color:#94a3b8 !important}
+    .app-dark input[type="month"]::-webkit-calendar-picker-indicator,.app-dark input[type="date"]::-webkit-calendar-picker-indicator{filter:none;opacity:1}
+    @media (prefers-color-scheme: dark){html,body{background:#020617}}
   </style>
 </head>
 <body>
   <div id="root"><div style="padding:40px 20px;text-align:center;color:#888">Cargando...</div></div>
   <div id="error-box" style="display:none;padding:16px;margin:16px;background:#fff0f0;border:1px solid #ffb3b3;border-radius:12px;color:#a30000;font-family:monospace;font-size:12px;white-space:pre-wrap"></div>
   <script>
-    window.addEventListener('error',function(e){
-      var box=document.getElementById('error-box');
-      if(box){box.style.display='block';box.textContent='Error: '+e.message+'\n'+(e.filename?(e.filename+':'+e.lineno):'');}
-    });
+    window.addEventListener('error',function(e){var box=document.getElementById('error-box');if(box){box.style.display='block';box.textContent='Error: '+e.message+'\n'+(e.filename?(e.filename+':'+e.lineno):'');}});
   </script>
   <script>
-    (function(){
-      var originalCreateElement=React.createElement;
-      React.createElement=function(type,props){
-        var children=Array.prototype.slice.call(arguments,2);
-        if(type === '') type=React.Fragment;
-        return originalCreateElement.apply(React,[type,props].concat(children));
-      };
-    })();
+    (function(){var originalCreateElement=React.createElement;React.createElement=function(type,props){var children=Array.prototype.slice.call(arguments,2);if(type === '') type=React.Fragment;return originalCreateElement.apply(React,[type,props].concat(children));};})();
   </script>
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
   <script>
-    if('serviceWorker' in navigator){
-      window.addEventListener('load',function(){
-        navigator.serviceWorker.register('sw.js?v=10',{updateViaCache:'none'}).then(function(reg){return reg.update();}).catch(function(){});
-      });
-    }
+    if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js?v=11',{updateViaCache:'none'}).then(function(reg){return reg.update();}).catch(function(){});});}
   </script>
 </body>
 </html>

@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Gestor de Finanzas</title>
-  <link rel="manifest" href="manifest.json?v=8">
+  <link rel="manifest" href="manifest.json?v=9">
   <meta name="theme-color" content="#007AFF">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -26,6 +26,12 @@
     .no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}
     button,input,select{font:inherit}
     .tap{transition:transform .12s ease}.tap:active{transform:scale(.97)}
+    select{color:#111827;background-color:#fff;color-scheme:light}
+    select option{color:#111827;background-color:#fff}
+    html.theme-dark select{color:#e5e7eb;background-color:#1e293b;color-scheme:dark}
+    html.theme-dark select option{color:#e5e7eb;background-color:#0f172a}
+    input[type="month"],input[type="date"]{color-scheme:light}
+    html.theme-dark input[type="month"],html.theme-dark input[type="date"]{color-scheme:dark}
   </style>
 </head>
 <body>
@@ -47,11 +53,11 @@
       };
     })();
   </script>
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',function(){
-        navigator.serviceWorker.register('sw.js?v=8',{updateViaCache:'none'}).then(function(reg){return reg.update();}).catch(function(){});
+        navigator.serviceWorker.register('sw.js?v=9',{updateViaCache:'none'}).then(function(reg){return reg.update();}).catch(function(){});
       });
     }
   </script>

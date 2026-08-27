@@ -1208,8 +1208,7 @@ function ExpenseTrackerApp() {
                   <div>
                     <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{t.description}</p>
                     <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize`}>
-                      {categories.find(c => c.id === t.category)?.name || t.category} {t.typeClassification ? `• ${t.typeClassification}` : ''}
-                    </p>
+                      {categories.find(c => c.id === t.category)?.name || t.category} {t.typeClassification ? `• ${typesList.find(ty => ty.id === t.typeClassification)?.name || t.typeClassification}` : ''}                    </p>
                   </div>
                 </div>
                 <div className="flex flex-col items-end">
@@ -1926,8 +1925,7 @@ function ExpenseTrackerApp() {
                             {t.typeClassification && (
                               <>
                                 <span className={`w-1 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
-                                <span className="text-xs text-purple-400 font-medium capitalize">{t.typeClassification}</span>
-                              </>
+                                <span className="text-xs text-purple-400 font-medium capitalize">{typesList.find(ty => ty.id === t.typeClassification)?.name || t.typeClassification}</span>                              </>
                             )}
                           </div>
                           {method && (

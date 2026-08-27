@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Gestor de Finanzas</title>
-  <link rel="manifest" href="manifest.json?v=9">
+  <link rel="manifest" href="manifest.json?v=10">
   <meta name="theme-color" content="#007AFF">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -26,11 +26,36 @@
     .no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}
     button,input,select{font:inherit}
     .tap{transition:transform .12s ease}.tap:active{transform:scale(.97)}
-    select{color:#111827 !important;background-color:#fff !important;color-scheme:light}
+
+    /* Controles en modo claro */
+    select{color:#111827 !important;background-color:#f9fafb !important;color-scheme:light}
     select option{color:#111827 !important;background-color:#fff !important}
-    select[class*="bg-slate-800"],select[class*="bg-slate-900"],select[class*="text-slate-200"]{color:#e5e7eb !important;background-color:#1e293b !important;color-scheme:dark}
-    select[class*="bg-slate-800"] option,select[class*="bg-slate-900"] option,select[class*="text-slate-200"] option{color:#e5e7eb !important;background-color:#0f172a !important}
-    input[type="month"],input[type="date"]{color-scheme:light}
+
+    /* Controles en modo oscuro manual o automático */
+    .app-dark select,
+    .app-dark select option,
+    .app-dark input[type="month"],
+    .app-dark input[type="date"]{
+      color:#e5e7eb !important;
+      background-color:#1e293b !important;
+      color-scheme:dark !important;
+      -webkit-text-fill-color:#e5e7eb !important;
+    }
+    .app-dark select option{background-color:#0f172a !important;color:#e5e7eb !important}
+
+    /* El selector de mes era el único control que seguía mostrando texto casi invisible. */
+    .app-dark input[type="month"]::-webkit-datetime-edit,
+    .app-dark input[type="date"]::-webkit-datetime-edit{color:#e5e7eb !important}
+    .app-dark input[type="month"]::-webkit-datetime-edit-fields-wrapper,
+    .app-dark input[type="date"]::-webkit-datetime-edit-fields-wrapper{color:#e5e7eb !important}
+    .app-dark input[type="month"]::-webkit-datetime-edit-text,
+    .app-dark input[type="date"]::-webkit-datetime-edit-text{color:#94a3b8 !important}
+    .app-dark input[type="month"]::-webkit-calendar-picker-indicator,
+    .app-dark input[type="date"]::-webkit-calendar-picker-indicator{filter:none;opacity:1}
+
+    @media (prefers-color-scheme: dark){
+      html,body{background:#020617}
+    }
   </style>
 </head>
 <body>
@@ -52,11 +77,11 @@
       };
     })();
   </script>
-  <script src="app.js?v=9"></script>
+  <script src="app.js?v=10"></script>
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',function(){
-        navigator.serviceWorker.register('sw.js?v=9',{updateViaCache:'none'}).then(function(reg){return reg.update();}).catch(function(){});
+        navigator.serviceWorker.register('sw.js?v=10',{updateViaCache:'none'}).then(function(reg){return reg.update();}).catch(function(){});
       });
     }
   </script>

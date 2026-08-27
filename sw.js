@@ -1,9 +1,9 @@
-const CACHE_NAME = 'gestor-finanzas-v7';
+const CACHE_NAME = 'gestor-finanzas-v8';
 const URLS_TO_CACHE = [
   './',
-  './index.html',
-  './app.js?v=7',
-  './manifest.json?v=7',
+  './index.html?v=8',
+  './app.js?v=8',
+  './manifest.json?v=8',
   './icon-192.png',
   './icon-512.png'
 ];
@@ -19,9 +19,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
+        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
       )
     )
   );

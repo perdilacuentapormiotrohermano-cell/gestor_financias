@@ -123,7 +123,7 @@ function ExpenseTrackerApp() {
   const [subTab, setSubTab] = useState('historial');
   const [transactions, setTransactions] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
-  
+
   const [settings, setSettings] = useState({ currency: 'ARS', theme: 'system' });
   const [systemTheme, setSystemTheme] = useState('light');
 
@@ -152,7 +152,7 @@ function ExpenseTrackerApp() {
   const [bankAccounts, setBankAccounts] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState(null);
-  
+
   const [savingsGoals, setSavingsGoals] = useState([]);
   const [emergencyFund, setEmergencyFund] = useState({ target: 0, current: 0 });
 
@@ -175,11 +175,11 @@ function ExpenseTrackerApp() {
     const savedBanks = localStorage.getItem('finance_banks');
     const savedGoals = localStorage.getItem('finance_goals');
     const savedEmergency = localStorage.getItem('finance_emergency');
-    
+
     if (savedGoals) try { setSavingsGoals(JSON.parse(savedGoals)); } catch (e) {}
     if (savedEmergency) try { setEmergencyFund(JSON.parse(savedEmergency)); } catch (e) {}
     if (savedSettings) try { setSettings(JSON.parse(savedSettings)); } catch (e) {}
-    
+
     if (savedTypes) {
       try { setTypesList(JSON.parse(savedTypes)); } catch (e) {}
     } else {
@@ -201,11 +201,11 @@ function ExpenseTrackerApp() {
         { id: 'ahorro', name: 'Ahorro / Metas', type: 'ahorro', budget: 0 }
       ]);
     }
-    
+
     if (savedCommitments) try { setCommitments(JSON.parse(savedCommitments)); } catch (e) {}
     if (savedInstallmentTracks) try { setInstallmentTracks(JSON.parse(savedInstallmentTracks)); } catch (e) {}
     if (savedBanks) try { setBankAccounts(JSON.parse(savedBanks)); } catch (e) {}
-    
+
     if (savedMethods) {
       try { setPaymentMethods(JSON.parse(savedMethods)); } catch (e) {}
     } else {
@@ -501,7 +501,7 @@ function ExpenseTrackerApp() {
     const [isAdding, setIsAdding] = useState(false);
     const [newCardName, setNewCardName] = useState('');
     const [newCardType, setNewCardType] = useState('credit');
-    
+
     const [cardFilterMode, setCardFilterMode] = useState('mes');
     const [cardMonth, setCardMonth] = useState(selectedMonth);
     const [cardDateFrom, setCardDateFrom] = useState(() => {
@@ -527,11 +527,11 @@ function ExpenseTrackerApp() {
           const hasLimits = card.limit || card.closingDay || card.dueDay;
           setIsEditingLimits(!hasLimits); 
           setCardLimitInput(card.limit ? formatAmountInput(card.limit.toString()) : '');
-          
+
           const today = new Date();
           const yyyy = today.getFullYear();
           const mm = String(today.getMonth() + 1).padStart(2, '0');
-          
+
           let cDay = card.closingDay || '';
           if (cDay && !String(cDay).includes('-')) cDay = `${yyyy}-${mm}-${String(cDay).padStart(2, '0')}`;
           setCardClosingDay(cDay);
@@ -544,7 +544,7 @@ function ExpenseTrackerApp() {
         setCardDetailTab('historial');
       }
     }, [selectedCardId, paymentMethods]);
-    
+
     const typeColors = {
       credit: 'from-purple-500 to-indigo-600',
       debit: 'from-blue-400 to-blue-600',
@@ -602,7 +602,7 @@ function ExpenseTrackerApp() {
 
     if (selectedCardId !== null) {
       const card = paymentMethods.find(m => m.id === selectedCardId);
-      
+
       const cardTransactions = transactions.filter(t => {
           if (t.methodId !== selectedCardId) return false;
           if (cardFilterMode === 'mes') {
@@ -629,7 +629,7 @@ function ExpenseTrackerApp() {
           }
           return { day: dateStr, full: `Día ${dateStr}` };
       };
-      
+
       const closingInfo = renderDateInfo(card.closingDay);
       const dueInfo = renderDateInfo(card.dueDay);
 
@@ -807,7 +807,7 @@ function ExpenseTrackerApp() {
                     </div>
                     <button onClick={() => setIsEditingLimits(true)} className="text-blue-500 p-1.5 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg transition-colors"><EditIcon /></button>
                   </div>
-                  
+
                   {card.limit > 0 && (
                     <div className={`mb-6 ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} p-4 rounded-2xl border`}>
                       <div className={`flex justify-between text-xs font-bold ${isDarkMode ? 'text-slate-300' : 'text-gray-700'} mb-2`}>
@@ -848,7 +848,7 @@ function ExpenseTrackerApp() {
               ) : (
                 <form onSubmit={handleSaveLimits} className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-5 shadow-sm border space-y-4`}>
                   <h3 className={`text-sm font-bold ${isDarkMode ? 'text-white border-slate-800' : 'text-gray-800 border-gray-100'} border-b pb-2`}>Configurar Tarjeta</h3>
-                  
+
                   <div>
                     <label className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} font-bold block mb-1`}>Límite Total de Crédito</label>
                     <div className="relative">
@@ -950,7 +950,7 @@ function ExpenseTrackerApp() {
               className={`bg-gradient-to-br ${method.color} rounded-3xl p-5 text-white shadow-md relative overflow-hidden h-40 flex flex-col justify-between group cursor-pointer hover:shadow-lg transition-all transform active:scale-[0.98]`}
             >
               <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 rounded-full bg-white opacity-10"></div>
-              
+
               <div className="flex justify-between items-start relative z-10">
                 <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-medium tracking-wider uppercase border border-white/10 backdrop-blur-sm shadow-sm">
                   {typeLabels[method.type] || 'Método'}
@@ -962,7 +962,7 @@ function ExpenseTrackerApp() {
                   <TrashIcon />
                 </button>
               </div>
-              
+
               <div className="relative z-10">
                 <h3 className="text-lg font-bold mb-1 opacity-90">{method.name}</h3>
                 <div className="flex justify-between items-end">
@@ -985,7 +985,7 @@ function ExpenseTrackerApp() {
   const Dashboard = () => {
     const today = new Date();
     const currentDay = today.getDate();
-    
+
     const upcomingCommitments = commitments.filter(c => {
       const due = parseInt(c.dueDay || 1);
       return due >= currentDay && due <= currentDay + 5;
@@ -1101,7 +1101,7 @@ function ExpenseTrackerApp() {
           <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 rounded-full bg-white opacity-10"></div>
           <p className="text-blue-100 text-sm font-medium mb-1">Balance Total (Ingresos - Gastos)</p>
           <h2 className="text-3xl font-bold tracking-tight mb-6">{formatCurrency(globalBalance)}</h2>
-          
+
           <div className="flex justify-between items-center border-t border-white/20 pt-4">
             <div>
               <p className="text-blue-100 text-xs flex items-center gap-1 mb-1">
@@ -1158,6 +1158,7 @@ function ExpenseTrackerApp() {
           </div>
         </div>
 
+        <div>
                 <div>
           <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'} mb-4`}>Presupuestos / Categorías</h3>
           <div className="space-y-3">
@@ -1165,10 +1166,12 @@ function ExpenseTrackerApp() {
               const spent = totals.categoryBreakdown[cat.id] || 0;
               const limit = cat.budget || 0;
               const percent = limit > 0 ? Math.min((spent / limit) * 100, 100) : 0;
-              
+
               if (limit === 0 && spent === 0) return null;
-              
+
               return (
+                <div key={cat.id} className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} p-3.5 rounded-2xl shadow-sm border`}>
+                  <div className="flex justify-between items-center mb-2">
                 <div key={cat.id} className={`${isDarkMode ? 'bg-[#0b1120] border-slate-800/70' : 'bg-white border-gray-100'} p-3.5 rounded-2xl shadow-sm border`}>
                   <div className="flex justify-between items-center mb-2.5">
                     <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'} capitalize`}>{cat.name}</span>
@@ -1177,6 +1180,8 @@ function ExpenseTrackerApp() {
                     </span>
                   </div>
                   {limit > 0 && (
+                    <div className={`w-full ${isDarkMode ? 'bg-slate-800' : 'bg-gray-100'} h-2 rounded-full overflow-hidden`}>
+                      <div className={`h-full rounded-full transition-all duration-500 ${percent >= 90 ? 'bg-red-500' : percent >= 75 ? 'bg-orange-400' : 'bg-blue-500'}`} style={{ width: `${percent}%` }}></div>
                     <div className={`w-full ${isDarkMode ? 'bg-slate-800/60' : 'bg-gray-100'} h-2.5 rounded-full overflow-hidden`}>
                       <div
                         className={`h-full rounded-full transition-all duration-500 ${percent >= 90 ? 'bg-red-500' : percent >= 75 ? 'bg-orange-400' : 'bg-blue-500'}`}
@@ -1208,7 +1213,8 @@ function ExpenseTrackerApp() {
                   <div>
                     <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{t.description}</p>
                     <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize`}>
-                      {categories.find(c => c.id === t.category)?.name || t.category} {t.typeClassification ? `• ${typesList.find(ty => ty.id === t.typeClassification)?.name || t.typeClassification}` : ''}                    </p>
+                      {categories.find(c => c.id === t.category)?.name || t.category} {t.typeClassification ? `• ${t.typeClassification}` : ''}
+                    </p>
                   </div>
                 </div>
                 <div className="flex flex-col items-end">
@@ -1258,14 +1264,14 @@ function ExpenseTrackerApp() {
     const [amountInput, setAmountInput] = useState('');
     const [description, setDescription] = useState('');
     const [smartInputText, setSmartInputText] = useState('');
-    
+
     const availableCategories = categories.filter(c => c.type === (type === 'ahorro' ? 'gasto' : type));
     const [categoryId, setCategoryId] = useState(availableCategories.length > 0 ? availableCategories[0].id : '');
     const [typeClassification, setTypeClassification] = useState(typesList.length > 0 ? typesList[0].id : 'diario');
     const [methodId, setMethodId] = useState(paymentMethods.length > 0 ? paymentMethods[0].id : '');
     const [destBankId, setDestBankId] = useState('');
     const [targetGoalId, setTargetGoalId] = useState('emergency');
-    
+
     const [selectedDateMode, setSelectedDateMode] = useState('hoy');
     const [manualDate, setManualDate] = useState(() => {
       const now = new Date();
@@ -1427,7 +1433,7 @@ function ExpenseTrackerApp() {
             </button>
           </div>
         </div>
-        
+
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className={`${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-gray-200/60 text-gray-500'} p-1 rounded-xl flex w-full`}>
             <button 
@@ -1635,7 +1641,7 @@ function ExpenseTrackerApp() {
     const [newHabAuto, setNewHabAuto] = useState(false);
     const [newHabCategory, setNewHabCategory] = useState(categories[0]?.id || '');
     const [newHabMethod, setNewHabMethod] = useState(paymentMethods[0]?.id || '');
-    
+
     const [habDateMode, setHabDateMode] = useState('hoy');
     const [habManualDate, setHabManualDate] = useState(() => new Date().toISOString().split('T')[0]);
 
@@ -1646,7 +1652,7 @@ function ExpenseTrackerApp() {
     const [newQuotaCurrent, setNewQuotaCurrent] = useState('1');
     const [newQuotaTotal, setNewQuotaTotal] = useState('12');
     const [newQuotaMethod, setNewQuotaMethod] = useState(paymentMethods[0]?.id || '');
-    
+
     const [quotaDateMode, setQuotaDateMode] = useState('hoy');
     const [quotaManualDate, setQuotaManualDate] = useState(() => new Date().toISOString().split('T')[0]);
 
@@ -1690,7 +1696,7 @@ function ExpenseTrackerApp() {
       const amt = parseFormattedAmount(newHabAmount);
       const cat = newHabCategory || categories[0]?.id;
       const meth = newHabMethod || paymentMethods[0]?.id;
-      
+
       let targetDate = new Date().toISOString();
       if (habDateMode === 'manual') {
         targetDate = new Date(habManualDate + 'T00:00:00').toISOString();
@@ -1925,7 +1931,8 @@ function ExpenseTrackerApp() {
                             {t.typeClassification && (
                               <>
                                 <span className={`w-1 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
-                                <span className="text-xs text-purple-400 font-medium capitalize">{typesList.find(ty => ty.id === t.typeClassification)?.name || t.typeClassification}</span>                              </>
+                                <span className="text-xs text-purple-400 font-medium capitalize">{t.typeClassification}</span>
+                              </>
                             )}
                           </div>
                           {method && (
@@ -1978,7 +1985,7 @@ function ExpenseTrackerApp() {
             {isAddingHabitual && (
               <form onSubmit={handleSaveHabitual} className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-5 shadow-sm border space-y-3 animate-in zoom-in-95 duration-200`}>
                 <h3 className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{editingHabitualId ? 'Modificar Pago Habitual' : 'Agregar Pago Habitual'}</h3>
-                
+
                 <input 
                   type="text" 
                   placeholder="Nombre (ej. Alquiler, Netflix)" 
@@ -1987,7 +1994,7 @@ function ExpenseTrackerApp() {
                   className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-3 text-sm outline-none`}
                   required
                 />
-                
+
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">$</span>
                   <input 
@@ -2144,7 +2151,7 @@ function ExpenseTrackerApp() {
             {isAddingQuota && (
               <form onSubmit={handleSaveQuota} className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-5 shadow-sm border space-y-3 animate-in zoom-in-95 duration-200`}>
                 <h3 className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{editingQuotaId ? 'Modificar Cuota' : 'Agregar Seguimiento de Cuota'}</h3>
-                
+
                 <input 
                   type="text" 
                   placeholder="Concepto (ej. TV Samsung, Zapatillas)" 
@@ -2153,7 +2160,7 @@ function ExpenseTrackerApp() {
                   className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-3 text-sm outline-none`}
                   required
                 />
-                
+
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">$</span>
                   <input 
@@ -2335,12 +2342,12 @@ function ExpenseTrackerApp() {
 
   const SavingsAndGoals = () => {
     const [localSubTab, setLocalSubTab] = useState('metas');
-    
+
     const [isAddingGoal, setIsAddingGoal] = useState(false);
     const [newGoalName, setNewGoalName] = useState('');
     const [newGoalTarget, setNewGoalTarget] = useState('');
     const [newGoalCurrent, setNewGoalCurrent] = useState('');
-    
+
     const [isEditingEmergency, setIsEditingEmergency] = useState(false);
     const [emTargetInput, setEmTargetInput] = useState('');
     const [emCurrentInput, setEmCurrentInput] = useState('');
@@ -2350,7 +2357,7 @@ function ExpenseTrackerApp() {
       const target = parseFormattedAmount(newGoalTarget);
       const current = parseFormattedAmount(newGoalCurrent) || 0;
       if (!newGoalName || target <= 0) return;
-      
+
       setSavingsGoals([...savingsGoals, {
         id: `goal_${Date.now()}`,
         name: newGoalName,
@@ -2500,13 +2507,13 @@ function ExpenseTrackerApp() {
                             <h2 className="text-lg font-bold">Fondo de Emergencia</h2>
                         </div>
                         <p className="text-xs text-slate-300 mb-6 leading-relaxed">Un fondo de emergencia es un colchón financiero para cubrir gastos imprevistos. Se recomienda tener entre 3 y 6 meses de tus gastos fijos.</p>
-                        
+
                         {!isEditingEmergency ? (
                             <div>
                                 <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-1 font-bold">Total Acumulado</p>
                                 <h3 className="text-3xl font-black mb-1 text-emerald-400">{formatCurrency(emergencyFund.current)}</h3>
                                 <p className="text-xs text-slate-300 mb-4 font-medium">Objetivo: {formatCurrency(emergencyFund.target)}</p>
-                                
+
                                 {emergencyFund.target > 0 && (
                                     <>
                                         <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden mb-2 border border-slate-800">
@@ -2562,7 +2569,7 @@ function ExpenseTrackerApp() {
 
     const savings = currentIncome - currentExpense;
     const savingsRate = currentIncome > 0 ? (savings / currentIncome) * 100 : 0;
-    
+
     const maxDash = 125.6; 
     const dashArray = maxDash;
     const boundedSavingsRate = Math.min(Math.max(savingsRate, 0), 100);
@@ -2574,7 +2581,7 @@ function ExpenseTrackerApp() {
         const method = paymentMethods.find(m => m.id === t.methodId);
         return method && (method.type === 'credit' || method.type === 'debit');
       }).reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
-      
+
       return currentExpense > 0 ? Math.round((currentMonthCardExpenses / currentExpense) * 100) : 0;
     }, [transactions, paymentMethods, selectedMonth, currentExpense]);
 
@@ -2592,7 +2599,7 @@ function ExpenseTrackerApp() {
             percentage: currentExpense > 0 ? (amount / currentExpense) * 100 : 0
         })).sort((a, b) => b.amount - a.amount);
     }, [transactions, selectedMonth, currentExpense, categories]);
-    
+
     const monthlyData = useMemo(() => {
        const data = [];
        for(let i=5; i>=0; i--) {
@@ -2602,7 +2609,7 @@ function ExpenseTrackerApp() {
            const mm = String(d.getMonth() + 1).padStart(2, '0');
            const monthStr = `${yyyy}-${mm}`;
            const monthLabel = d.toLocaleString('es-ES', { month: 'short' });
-           
+
            let inc = 0; let exp = 0;
            transactions.forEach(t => {
                const txDate = new Date(t.date);
@@ -2615,7 +2622,7 @@ function ExpenseTrackerApp() {
        }
        return data;
     }, [transactions]);
-    
+
     const maxMonthlyAmount = Math.max(...monthlyData.map(d => Math.max(d.inc, d.exp, 1000)));
 
     return (
@@ -2662,7 +2669,7 @@ function ExpenseTrackerApp() {
                 <div className="text-center"><span className="block text-blue-500 mb-0.5">Ahorrado</span>{formatCurrency(Math.max(0, savings))}</div>
             </div>
         </div>
-        
+
         <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-5 shadow-sm border mb-6`}>
             <h3 className={`text-xs font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-4`}>Composición del Gasto</h3>
             <div className="space-y-3">
@@ -2781,9 +2788,9 @@ function ExpenseTrackerApp() {
     const handleLinkBank = (e) => {
       e.preventDefault();
       if (!newBankBalance) return;
-      
+
       setIsSimulatingSync(true);
-      
+
       setTimeout(() => {
         const balance = parseFormattedAmount(newBankBalance);
         setBankAccounts([...bankAccounts, {
@@ -2952,7 +2959,7 @@ function ExpenseTrackerApp() {
               ) : (
                 <>
                   <p className={`text-xs font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'} mb-3`}>Conexión Bancaria</p>
-                  
+
                   <label className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} font-bold block mb-1`}>Entidad Bancaria</label>
                   <select value={newBankName} onChange={e => setNewBankName(e.target.value)} className={`p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm w-full mb-3 outline-none`}>
                     <option value="Galicia">Banco Galicia</option>
@@ -2997,7 +3004,7 @@ function ExpenseTrackerApp() {
             {bankAccounts.map(b => {
               const linkedCards = paymentMethods.filter(m => m.bankId === b.id);
               const unlinkedCards = paymentMethods.filter(m => m.bankId !== b.id && m.type !== 'cash');
-              
+
               return (
               <div key={b.id} className={`flex flex-col p-3 ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} rounded-xl border`}>
                 <div className="flex justify-between items-center mb-2">
@@ -3104,7 +3111,7 @@ function ExpenseTrackerApp() {
             </button>
           </div>
         </div>
-        
+
         <style dangerouslySetInnerHTML={{__html: `
           .no-scrollbar::-webkit-scrollbar { display: none; }
           .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

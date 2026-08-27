@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Gestor de Finanzas</title>
-  <link rel="manifest" href="manifest.json?v=6">
+  <link rel="manifest" href="manifest.json?v=7">
   <meta name="theme-color" content="#007AFF">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -17,7 +17,7 @@
   <link rel="icon" href="icon-192.png">
   <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js" crossorigin></script>
+  <script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js" crossorigin></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     html,body{margin:0;padding:0;background:#e5e7eb;overscroll-behavior:none;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -38,11 +38,11 @@
       if(box){box.style.display='block';box.textContent='Error: '+e.message+'\n'+(e.filename?(e.filename+':'+e.lineno):'');}
     });
   </script>
-  <script type="text/babel" data-presets="react" src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',function(){
-        navigator.serviceWorker.register('sw.js?v=6',{updateViaCache:'none'}).catch(function(){});
+        navigator.serviceWorker.register('sw.js?v=7',{updateViaCache:'none'}).then(function(reg){return reg.update();}).catch(function(){});
       });
     }
   </script>

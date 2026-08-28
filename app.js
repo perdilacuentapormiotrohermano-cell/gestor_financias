@@ -1,4 +1,4 @@
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect, useMemo, useRef } = React;
 
 const HomeIcon = ({ active }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? "#007AFF" : "#8E8E93"} strokeWidth={active ? "2.5" : "2"} strokeLinecap="round" strokeLinejoin="round">
@@ -118,6 +118,14 @@ const ShieldIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
 );
 
+const CloudIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
+);
+
+const LogOutIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+);
+
 function ExpenseTrackerApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [subTab, setSubTab] = useState('historial');
@@ -126,6 +134,13 @@ function ExpenseTrackerApp() {
   
   const [settings, setSettings] = useState({ currency: 'ARS', theme: 'system' });
   const [systemTheme, setSystemTheme] = useState('light');
+
+  // --- Cuenta y sincronización en la nube (Firebase) ---
+  const [authUser, setAuthUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('offline'); // 'offline' | 'syncing' | 'synced' | 'error'
+  const isRemoteUpdate = useRef(false);
+  const hasLoadedCloudOnce = useRef(false);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -140,6 +155,22 @@ function ExpenseTrackerApp() {
   useEffect(() => {
     document.body.classList.toggle('app-dark', isDarkMode);
   }, [isDarkMode]);
+
+  useEffect(() => {
+    if (typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) {
+      setAuthChecked(true);
+      return;
+    }
+    const unsubscribe = firebase.auth().onAuthStateChanged((u) => {
+      setAuthUser(u);
+      setAuthChecked(true);
+      if (!u) {
+        hasLoadedCloudOnce.current = false;
+        setSyncStatus('offline');
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -282,6 +313,61 @@ function ExpenseTrackerApp() {
     }
   }, [transactions, paymentMethods, settings, categories, typesList, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, isLoaded]);
 
+  // Al iniciar sesión: escuchar cambios en la nube en tiempo real (Firestore)
+  useEffect(() => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) return;
+    const db = firebase.firestore();
+    const docRef = db.collection('users').doc(authUser.uid);
+    setSyncStatus('syncing');
+
+    const unsubscribe = docRef.onSnapshot((snap) => {
+      if (snap.exists) {
+        const data = snap.data() || {};
+        isRemoteUpdate.current = true;
+        if (data.transactions) setTransactions(data.transactions);
+        if (data.paymentMethods) setPaymentMethods(data.paymentMethods);
+        if (data.settings) setSettings(data.settings);
+        if (data.categories) setCategories(data.categories);
+        if (data.typesList) setTypesList(data.typesList);
+        if (data.commitments) setCommitments(data.commitments);
+        if (data.installmentTracks) setInstallmentTracks(data.installmentTracks);
+        if (data.bankAccounts) setBankAccounts(data.bankAccounts);
+        if (data.savingsGoals) setSavingsGoals(data.savingsGoals);
+        if (data.emergencyFund) setEmergencyFund(data.emergencyFund);
+        hasLoadedCloudOnce.current = true;
+        setSyncStatus('synced');
+        setTimeout(() => { isRemoteUpdate.current = false; }, 400);
+      } else {
+        // Primera vez que este usuario sincroniza: sube los datos que ya tenía en este dispositivo
+        hasLoadedCloudOnce.current = true;
+        docRef.set({
+          transactions, paymentMethods, settings, categories, typesList,
+          commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
+          updatedAt: Date.now()
+        }).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
+      }
+    }, () => setSyncStatus('error'));
+
+    return () => unsubscribe();
+    // eslint-disable-next-line
+  }, [authUser]);
+
+  // Cuando cambian los datos localmente: subirlos a la nube (con una pequeña espera para no saturar)
+  useEffect(() => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !hasLoadedCloudOnce.current) return;
+    if (isRemoteUpdate.current) return;
+    const db = firebase.firestore();
+    const timer = setTimeout(() => {
+      setSyncStatus('syncing');
+      db.collection('users').doc(authUser.uid).set({
+        transactions, paymentMethods, settings, categories, typesList,
+        commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
+        updatedAt: Date.now()
+      }, { merge: true }).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [transactions, paymentMethods, settings, categories, typesList, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, authUser]);
+
   const formatAmountInput = (val) => {
     if (!val) return '';
     let clean = val.replace(/[^0-9,]/g, '');
@@ -360,6 +446,36 @@ function ExpenseTrackerApp() {
 
   const deleteTransaction = (id) => {
     setTransactions(transactions.filter(t => t.id !== id));
+  };
+
+  // --- Handlers de cuenta / sincronización ---
+  const handleRegister = async (email, password) => {
+    if (typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) throw { code: 'firebase-no-config' };
+    await firebase.auth().createUserWithEmailAndPassword(email, password);
+  };
+
+  const handleLogin = async (email, password) => {
+    if (typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) throw { code: 'firebase-no-config' };
+    await firebase.auth().signInWithEmailAndPassword(email, password);
+  };
+
+  const handleLogout = async () => {
+    if (typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) return;
+    await firebase.auth().signOut();
+  };
+
+  const translateAuthError = (code) => {
+    const map = {
+      'auth/email-already-in-use': 'Ese email ya tiene una cuenta creada. Probá iniciar sesión.',
+      'auth/invalid-email': 'El email no es válido.',
+      'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.',
+      'auth/user-not-found': 'No existe una cuenta con ese email.',
+      'auth/wrong-password': 'Contraseña incorrecta.',
+      'auth/invalid-credential': 'Email o contraseña incorrectos.',
+      'auth/too-many-requests': 'Demasiados intentos. Esperá un momento y probá de nuevo.',
+      'firebase-no-config': 'La sincronización todavía no está configurada en esta app (falta el archivo firebase-config.js).'
+    };
+    return map[code] || 'Ocurrió un error. Intentá de nuevo.';
   };
 
   // Gemini AI Assistant Handler
@@ -2731,6 +2847,30 @@ function ExpenseTrackerApp() {
     const [newBankAccountType, setNewBankAccountType] = useState('Caja de Ahorro');
     const [newBankBalance, setNewBankBalance] = useState('');
 
+    const [authMode, setAuthMode] = useState('login');
+    const [authEmail, setAuthEmail] = useState('');
+    const [authPassword, setAuthPassword] = useState('');
+    const [authError, setAuthError] = useState('');
+    const [authSubmitting, setAuthSubmitting] = useState(false);
+
+    const handleAuthSubmit = async (e) => {
+      e.preventDefault();
+      setAuthError('');
+      setAuthSubmitting(true);
+      try {
+        if (authMode === 'login') {
+          await handleLogin(authEmail, authPassword);
+        } else {
+          await handleRegister(authEmail, authPassword);
+        }
+        setAuthPassword('');
+      } catch (err) {
+        setAuthError(translateAuthError(err.code));
+      } finally {
+        setAuthSubmitting(false);
+      }
+    };
+
     const handleAddCategory = (e) => {
       e.preventDefault();
       if (!newCatName) return;
@@ -2835,6 +2975,77 @@ function ExpenseTrackerApp() {
             <option value="USD">Dólar Estadounidense (USD)</option>
             <option value="EUR">Euro (EUR)</option>
           </select>
+        </div>
+
+        <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-5 shadow-sm border mb-6`}>
+          <div className="flex items-center gap-2 mb-1">
+            <div className="bg-blue-500/10 text-blue-500 p-1.5 rounded-lg"><CloudIcon /></div>
+            <h3 className="text-xs font-bold text-blue-500 uppercase tracking-wider">Cuenta y Sincronización</h3>
+          </div>
+          <p className={`text-xs mb-4 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+            Iniciá sesión con la misma cuenta en tu celular y tu PC para ver los mismos datos en ambos, actualizados automáticamente.
+          </p>
+
+          {(typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) ? (
+            <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-3 text-xs text-orange-400 font-medium">
+              La sincronización no está configurada todavía en esta app (falta el archivo <code>firebase-config.js</code>).
+            </div>
+          ) : !authChecked ? (
+            <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Comprobando sesión...</div>
+          ) : authUser ? (
+            <div className={`${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} border rounded-2xl p-4 flex items-center justify-between gap-3`}>
+              <div className="min-w-0">
+                <p className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'} truncate`}>{authUser.email}</p>
+                <p className={`text-[11px] font-semibold mt-0.5 flex items-center gap-1.5 ${syncStatus === 'synced' ? 'text-green-500' : syncStatus === 'error' ? 'text-red-500' : 'text-blue-500'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${syncStatus === 'synced' ? 'bg-green-500' : syncStatus === 'error' ? 'bg-red-500' : 'bg-blue-500 animate-pulse'}`}></span>
+                  {syncStatus === 'synced' ? 'Sincronizado' : syncStatus === 'error' ? 'Error de sincronización' : 'Sincronizando...'}
+                </p>
+              </div>
+              <button
+                onClick={handleLogout}
+                className={`flex items-center gap-1.5 ${isDarkMode ? 'bg-slate-900 text-slate-300 hover:bg-slate-800' : 'bg-white text-gray-700 hover:bg-gray-100'} border ${isDarkMode ? 'border-slate-700' : 'border-gray-200'} px-3 py-2 rounded-xl text-xs font-bold transition-colors shrink-0`}
+              >
+                <LogOutIcon /> Salir
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleAuthSubmit} className="space-y-3">
+              <div className={`${isDarkMode ? 'bg-slate-800' : 'bg-gray-100'} p-1 rounded-xl flex w-full`}>
+                <button type="button" onClick={() => { setAuthMode('login'); setAuthError(''); }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${authMode === 'login' ? (isDarkMode ? 'bg-slate-700 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : (isDarkMode ? 'text-slate-400' : 'text-gray-500')}`}>Iniciar Sesión</button>
+                <button type="button" onClick={() => { setAuthMode('register'); setAuthError(''); }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${authMode === 'register' ? (isDarkMode ? 'bg-slate-700 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : (isDarkMode ? 'text-slate-400' : 'text-gray-500')}`}>Crear Cuenta</button>
+              </div>
+
+              <input
+                type="email"
+                placeholder="Email"
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-3 outline-none text-sm font-medium`}
+                required
+              />
+              <input
+                type="password"
+                placeholder="Contraseña (mínimo 6 caracteres)"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-3 outline-none text-sm font-medium`}
+                required
+                minLength={6}
+              />
+
+              {authError && (
+                <p className="text-xs text-red-500 font-medium bg-red-500/10 border border-red-500/20 rounded-xl p-2.5">{authError}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={authSubmitting}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl text-sm shadow-md shadow-blue-500/20 transition-colors disabled:opacity-50"
+              >
+                {authSubmitting ? 'Un momento...' : authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta y Sincronizar'}
+              </button>
+            </form>
+          )}
         </div>
 
         <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-5 shadow-sm border mb-6`}>

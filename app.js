@@ -1169,16 +1169,22 @@ function ExpenseTrackerApp() {
               if (limit === 0 && spent === 0) return null;
               
               return (
-                <div key={cat.id} className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} p-3.5 rounded-2xl shadow-sm border`}>
-                  <div className="flex justify-between items-center mb-2">
+                <div key={cat.id} className={`${isDarkMode ? 'bg-[#0b1120] border-slate-800/70' : 'bg-white border-gray-100'} p-3.5 rounded-2xl shadow-sm border`}>
+                  <div className="flex justify-between items-center mb-2.5">
                     <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'} capitalize`}>{cat.name}</span>
                     <span className={`text-xs font-semibold ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>
                       {formatCurrency(spent)} {limit > 0 && <span className={`${isDarkMode ? 'text-slate-500' : 'text-gray-400'} font-normal`}>/ {formatCurrency(limit)}</span>}
                     </span>
                   </div>
                   {limit > 0 && (
-                    <div className={`w-full ${isDarkMode ? 'bg-slate-800' : 'bg-gray-100'} h-2 rounded-full overflow-hidden`}>
-                      <div className={`h-full rounded-full transition-all duration-500 ${percent >= 90 ? 'bg-red-500' : percent >= 75 ? 'bg-orange-400' : 'bg-blue-500'}`} style={{ width: `${percent}%` }}></div>
+                    <div className={`w-full ${isDarkMode ? 'bg-slate-800/60' : 'bg-gray-100'} h-2.5 rounded-full overflow-hidden`}>
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${percent >= 90 ? 'bg-red-500' : percent >= 75 ? 'bg-orange-400' : 'bg-blue-500'}`}
+                        style={{
+                          width: `${percent}%`,
+                          boxShadow: isDarkMode ? `0 0 10px 1px ${percent >= 90 ? 'rgba(239,68,68,0.7)' : percent >= 75 ? 'rgba(251,146,60,0.7)' : 'rgba(59,130,246,0.7)'}` : 'none'
+                        }}
+                      ></div>
                     </div>
                   )}
                 </div>
@@ -1202,7 +1208,7 @@ function ExpenseTrackerApp() {
                   <div>
                     <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{t.description}</p>
                     <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize`}>
-                      {categories.find(c => c.id === t.category)?.name || t.category} {t.typeClassification ? `• ${t.typeClassification}` : ''}
+                      {categories.find(c => c.id === t.category)?.name || t.category} {t.typeClassification ? `• ${typesList.find(ty => ty.id === t.typeClassification)?.name || t.typeClassification}` : ''}
                     </p>
                   </div>
                 </div>
@@ -1920,7 +1926,7 @@ function ExpenseTrackerApp() {
                             {t.typeClassification && (
                               <>
                                 <span className={`w-1 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
-                                <span className="text-xs text-purple-400 font-medium capitalize">{t.typeClassification}</span>
+                                <span className="text-xs text-purple-400 font-medium capitalize">{typesList.find(ty => ty.id === t.typeClassification)?.name || t.typeClassification}</span>
                               </>
                             )}
                           </div>

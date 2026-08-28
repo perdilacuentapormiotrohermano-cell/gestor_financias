@@ -725,25 +725,25 @@ function ExpenseTrackerApp() {
                   cardTransactions.map(t => {
                     const category = categories.find(c => c.id === t.category);
                     return (
-                      <div key={t.id} className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border flex justify-between items-center group`}>
-                        <div className="flex items-center gap-3">
+                      <div key={t.id} className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border flex justify-between items-center gap-2 group`}>
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${t.type === 'ingreso' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
                             {t.type === 'ingreso' ? <TrendingUpIcon /> : <TrendingDownIcon />}
                           </div>
-                          <div>
-                            <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'} text-base`}>{t.description}</p>
+                          <div className="min-w-0">
+                            <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'} text-base truncate`}>{t.description}</p>
                             <div className="flex items-center gap-2 mt-0.5">
-                              <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                              <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} whitespace-nowrap`}>
                                 {new Date(t.date).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}
                               </span>
-                              <span className={`w-1 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
-                              <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize`}>{category ? category.name : t.category}</span>
+                              <span className={`w-1 h-1 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
+                              <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize truncate`}>{category ? category.name : t.category}</span>
                             </div>
                           </div>
                         </div>
-                        <div className="flex flex-col items-end gap-1.5">
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
                           <div className="flex flex-col items-end">
-                            <span className={`font-bold ${t.type === 'ingreso' ? 'text-green-500' : (isDarkMode ? 'text-white' : 'text-gray-900')}`}>
+                            <span className={`font-bold whitespace-nowrap ${t.type === 'ingreso' ? 'text-green-500' : (isDarkMode ? 'text-white' : 'text-gray-900')}`}>
                               {t.type === 'ingreso' ? '+' : '-'}{formatCurrency(t.amount)}
                             </span>
                           </div>
@@ -1200,24 +1200,24 @@ function ExpenseTrackerApp() {
           </div>
           <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800 divide-slate-800' : 'bg-white border-gray-100 divide-gray-50'} rounded-3xl shadow-sm border divide-y overflow-hidden`}>
             {transactions.filter(t => isTransactionInSelectedMonth(t.date)).slice(0, 3).map(t => (
-              <div key={t.id} className="flex justify-between items-center p-4">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${t.type === 'ingreso' ? 'bg-green-500/10 text-green-500' : t.type === 'ahorro' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+              <div key={t.id} className="flex justify-between items-center gap-2 p-4">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${t.type === 'ingreso' ? 'bg-green-500/10 text-green-500' : t.type === 'ahorro' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
                     {t.type === 'ingreso' ? <TrendingUpIcon /> : t.type === 'ahorro' ? <TargetIcon /> : <TrendingDownIcon />}
                   </div>
-                  <div>
-                    <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{t.description}</p>
-                    <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize`}>
-                      {categories.find(c => c.id === t.category)?.name || t.category} {t.typeClassification ? `• ${typesList.find(ty => ty.id === t.typeClassification)?.name || t.typeClassification}` : ''}
+                  <div className="min-w-0">
+                    <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'} truncate`}>{t.description}</p>
+                    <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize truncate`}>
+                      {categories.find(c => c.id === t.category)?.name || t.category} {t.typeClassification ? `• ${typesList.find(ty => ty.id === t.typeClassification)?.name || 'Personalizado'}` : ''}
                     </p>
                   </div>
                 </div>
-                <div className="flex flex-col items-end">
-                  <span className={`font-bold ${t.type === 'ingreso' ? 'text-green-500' : t.type === 'ahorro' ? 'text-emerald-500' : (isDarkMode ? 'text-white' : 'text-gray-800')}`}>
+                <div className="flex flex-col items-end shrink-0">
+                  <span className={`font-bold whitespace-nowrap ${t.type === 'ingreso' ? 'text-green-500' : t.type === 'ahorro' ? 'text-emerald-500' : (isDarkMode ? 'text-white' : 'text-gray-800')}`}>
                     {t.type === 'ingreso' ? '+' : t.type === 'ahorro' ? '🎯 ' : '-'}{formatCurrency(t.amount)}
                   </span>
                   {t.originalCurrency && t.originalCurrency !== settings.currency && (
-                    <span className="text-[10px] text-gray-400 font-medium">
+                    <span className="text-[10px] text-gray-400 font-medium whitespace-nowrap">
                       ({t.originalCurrency} {new Intl.NumberFormat('es-AR').format(t.originalAmount)})
                     </span>
                   )}
@@ -1910,23 +1910,23 @@ function ExpenseTrackerApp() {
                   const method = paymentMethods.find(m => m.id === t.methodId);
                   const category = categories.find(c => c.id === t.category);
                   return (
-                    <div key={t.id} className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border flex justify-between items-center group`}>
-                      <div className="flex items-center gap-3">
+                    <div key={t.id} className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border flex justify-between items-center gap-2 group`}>
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${t.type === 'ingreso' ? 'bg-green-500/10 text-green-500' : t.type === 'ahorro' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
                           {t.type === 'ingreso' ? <TrendingUpIcon /> : t.type === 'ahorro' ? <TargetIcon /> : <TrendingDownIcon />}
                         </div>
-                        <div>
-                          <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'} text-base`}>{t.description}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                        <div className="min-w-0">
+                          <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'} text-base truncate`}>{t.description}</p>
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} whitespace-nowrap`}>
                               {new Date(t.date).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}
                             </span>
-                            <span className={`w-1 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
-                            <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize`}>{category ? category.name : t.category}</span>
+                            <span className={`w-1 h-1 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
+                            <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize truncate`}>{category ? category.name : t.category}</span>
                             {t.typeClassification && (
                               <>
-                                <span className={`w-1 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
-                                <span className="text-xs text-purple-400 font-medium capitalize">{typesList.find(ty => ty.id === t.typeClassification)?.name || t.typeClassification}</span>
+                                <span className={`w-1 h-1 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
+                                <span className="text-xs text-purple-400 font-medium capitalize truncate">{typesList.find(ty => ty.id === t.typeClassification)?.name || 'Personalizado'}</span>
                               </>
                             )}
                           </div>
@@ -1939,13 +1939,13 @@ function ExpenseTrackerApp() {
                           )}
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-1.5">
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
                         <div className="flex flex-col items-end">
-                          <span className={`font-bold ${t.type === 'ingreso' ? 'text-green-500' : t.type === 'ahorro' ? 'text-emerald-500' : (isDarkMode ? 'text-white' : 'text-gray-900')}`}>
+                          <span className={`font-bold whitespace-nowrap ${t.type === 'ingreso' ? 'text-green-500' : t.type === 'ahorro' ? 'text-emerald-500' : (isDarkMode ? 'text-white' : 'text-gray-900')}`}>
                             {t.type === 'ingreso' ? '+' : t.type === 'ahorro' ? '🎯 ' : '-'}{formatCurrency(t.amount)}
                           </span>
                           {t.originalCurrency && t.originalCurrency !== settings.currency && (
-                            <span className="text-[10px] text-gray-400 font-medium mt-0.5">
+                            <span className="text-[10px] text-gray-400 font-medium mt-0.5 whitespace-nowrap">
                               ({t.originalCurrency} {new Intl.NumberFormat('es-AR').format(t.originalAmount)})
                             </span>
                           )}

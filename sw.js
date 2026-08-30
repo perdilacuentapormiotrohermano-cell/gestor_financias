@@ -1,10 +1,10 @@
-const CACHE_NAME = 'gestor-finanzas-v18';
+const CACHE_NAME = 'gestor-finanzas-v19';
 const URLS_TO_CACHE = [
   './',
-  './index.html?v=18',
-  './app.js?v=18',
-  './firebase-config.js?v=18',
-  './manifest.json?v=18',
+  './index.html?v=19',
+  './app.js?v=19',
+  './firebase-config.js?v=19',
+  './manifest.json?v=19',
   './icon-192.png',
   './icon-512.png'
 ];

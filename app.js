@@ -502,6 +502,24 @@ function ExpenseTrackerApp() {
   };
 
   // Gemini AI Assistant Handler
+  // Llama a la API de Gemini reintentando automáticamente si el modelo está sobrecargado (503 / "alta demanda")
+  const callGeminiWithRetry = async (apiUrl, payload, maxRetries = 3) => {
+    let lastResult = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      const isOverloaded = result.error && (result.error.code === 503 || /high demand|overloaded|unavailable/i.test(result.error.message || ''));
+      if (!isOverloaded || attempt === maxRetries) return result;
+      lastResult = result;
+      await new Promise(res => setTimeout(res, 2000 * (attempt + 1)));
+    }
+    return lastResult;
+  };
+
   const handleSendAiMessage = async (userMsgRaw) => {
     const userMsg = (userMsgRaw || '').trim();
     if (!userMsg || aiLoading) return;
@@ -538,19 +556,14 @@ function ExpenseTrackerApp() {
         systemInstruction: { parts: [{ text: systemPrompt }] }
       };
 
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      const result = await response.json();
+      const result = await callGeminiWithRetry(apiUrl, payload);
       const candidate = result.candidates?.[0];
       if (candidate && candidate.content?.parts?.[0]?.text) {
         const reply = candidate.content.parts[0].text;
         setAiMessages(prev => [...prev, { role: 'model', text: reply }]);
       } else if (result.error?.message) {
-        setAiMessages(prev => [...prev, { role: 'model', text: `Error de Google Gemini: ${result.error.message}` }]);
+        const isOverloaded = result.error.code === 503 || /high demand|overloaded|unavailable/i.test(result.error.message || '');
+        setAiMessages(prev => [...prev, { role: 'model', text: isOverloaded ? 'El modelo de Gemini está con mucha demanda ahora mismo. Ya reintenté un par de veces automáticamente, pero seguía saturado — probá de nuevo en uno o dos minutos.' : `Error de Google Gemini: ${result.error.message}` }]);
       } else if (candidate?.finishReason === 'SAFETY') {
         setAiMessages(prev => [...prev, { role: 'model', text: 'La respuesta fue bloqueada por los filtros de seguridad de Gemini. Probá reformular la pregunta.' }]);
       } else {
@@ -571,7 +584,7 @@ function ExpenseTrackerApp() {
     if (!promptText || isScanning) return;
     setIsScanning(true);
     try {
-      const systemPrompt = `Eres una IA de finanzas. Extrae de la frase del usuario: descripción corta, monto numérico puro y sugiere una categoría válida de entre las siguientes IDs: ${categories.map(c => c.id).join(', ')}. Responde estrictamente en formato JSON plano con las propiedades: "description", "amount", "category".`;
+      const systemPrompt = `Eres una IA de finanzas. Del mensaje del usuario, extraé: una descripción corta, el monto numérico (sin símbolos de moneda ni separadores de miles, usando punto decimal si hace falta) y la categoría más apropiada, elegida EXACTAMENTE de esta lista de IDs válidos: ${categories.map(c => c.id).join(', ')}. Respondé ÚNICAMENTE con un objeto JSON válido, sin texto adicional, sin explicaciones y sin bloques de código markdown, con exactamente esta forma: {"description": "...", "amount": 0, "category": "..."}`;
       const apiKey = settings.geminiApiKey || "";
       if (!apiKey) {
         alert('Para usar el autocompletado con IA, cargá tu clave de Gemini en Ajustes → Asistente de IA (Gemini).');
@@ -581,31 +594,34 @@ function ExpenseTrackerApp() {
       const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
       const payload = {
         contents: [{ parts: [{ text: promptText }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              description: { type: "STRING" },
-              amount: { type: "NUMBER" },
-              category: { type: "STRING" }
-            },
-            propertyOrdering: ["description", "amount", "category"]
-          }
-        },
         systemInstruction: { parts: [{ text: systemPrompt }] }
       };
-      const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const result = await response.json();
-      const textJson = result.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (textJson) {
-        const parsed = JSON.parse(textJson);
-        if (parsed.description) setDesc(parsed.description);
-        if (parsed.amount) setAmt(formatAmountInput(String(parsed.amount)));
-        if (parsed.category) setCat(parsed.category);
+      const result = await callGeminiWithRetry(apiUrl, payload);
+      const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (rawText) {
+        // Por si Gemini igual envuelve la respuesta en ```json ... ``` o agrega texto alrededor
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        const cleanJson = jsonMatch ? jsonMatch[0] : rawText;
+        let parsed = null;
+        try {
+          parsed = JSON.parse(cleanJson);
+        } catch (parseErr) {
+          alert(`La IA respondió pero no en el formato esperado. Probá reformular el texto.\n\nRespuesta recibida: ${rawText.slice(0, 200)}`);
+        }
+        if (parsed) {
+          if (parsed.description) setDesc(String(parsed.description));
+          if (parsed.amount !== undefined && parsed.amount !== null && parsed.amount !== '') setAmt(formatAmountInput(String(parsed.amount)));
+          if (parsed.category) setCat(String(parsed.category));
+        }
+      } else if (result.error?.message) {
+        alert(`Error de Google Gemini: ${result.error.message}`);
+      } else {
+        alert('No se recibió respuesta de la IA. Probá de nuevo en unos segundos.');
       }
     } catch(e) {
       console.error(e);
+      alert(`Ocurrió un error al usar el autocompletado: ${e.message || e}`);
     } finally {
       setIsScanning(false);
     }
@@ -629,13 +645,29 @@ function ExpenseTrackerApp() {
       setIsListening(false);
       handleSmartScan(speechResult, setDesc, setAmt, setCat);
     };
-    recognition.onerror = () => {
+    recognition.onerror = (event) => {
       setIsListening(false);
+      const errorMessages = {
+        'not-allowed': 'No hay permiso de micrófono para este sitio. Andá a la configuración del navegador (ícono de candado junto a la URL) → Permisos → Micrófono → Permitir, y volvé a intentar.',
+        'service-not-allowed': 'El navegador bloqueó el acceso al servicio de reconocimiento de voz.',
+        'audio-capture': 'No se encontró ningún micrófono disponible en este dispositivo.',
+        'no-speech': 'No se detectó ninguna voz. Probá de nuevo y hablá apenas se active.',
+        'network': 'Se necesita conexión a internet para el reconocimiento de voz.',
+        'aborted': null
+      };
+      const msg = errorMessages[event.error];
+      if (msg) alert(msg);
+      else if (msg === undefined) alert(`No se pudo usar el micrófono (${event.error}). Probá de nuevo.`);
     };
     recognition.onend = () => {
       setIsListening(false);
     };
-    recognition.start();
+    try {
+      recognition.start();
+    } catch (e) {
+      setIsListening(false);
+      alert('No se pudo iniciar el micrófono. Probá de nuevo.');
+    }
   };
 
   const CardsManager = () => {

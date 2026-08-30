@@ -606,13 +606,34 @@ function ExpenseTrackerApp() {
         let parsed = null;
         try {
           parsed = JSON.parse(cleanJson);
+          // Por si Gemini lo devuelve envuelto en un array o dentro de otra clave
+          if (Array.isArray(parsed)) parsed = parsed[0];
+          if (parsed && !('description' in parsed) && !('amount' in parsed) && !('category' in parsed)) {
+            const nestedKey = Object.keys(parsed).find(k => typeof parsed[k] === 'object' && parsed[k] !== null);
+            if (nestedKey) parsed = parsed[nestedKey];
+          }
         } catch (parseErr) {
-          alert(`La IA respondió pero no en el formato esperado. Probá reformular el texto.\n\nRespuesta recibida: ${rawText.slice(0, 200)}`);
+          alert(`La IA respondió pero no en el formato esperado. Probá reformular el texto.\n\nRespuesta recibida: ${rawText.slice(0, 300)}`);
         }
         if (parsed) {
-          if (parsed.description) setDesc(String(parsed.description));
-          if (parsed.amount !== undefined && parsed.amount !== null && parsed.amount !== '') setAmt(formatAmountInput(String(parsed.amount)));
-          if (parsed.category) setCat(String(parsed.category));
+          const desc = parsed.description ?? parsed.descripcion ?? parsed.desc;
+          const amt = parsed.amount ?? parsed.monto ?? parsed.amount_number;
+          const cat = parsed.category ?? parsed.categoria ?? parsed.category_id;
+
+          let appliedSomething = false;
+          if (desc) { setDesc(String(desc)); appliedSomething = true; }
+          if (amt !== undefined && amt !== null && amt !== '') {
+            const numericAmt = parseFloat(String(amt).replace(/[^0-9.,-]/g, '').replace(',', '.'));
+            if (!isNaN(numericAmt) && numericAmt > 0) { setAmt(formatAmountInput(String(numericAmt))); appliedSomething = true; }
+          }
+          if (cat) {
+            const matchedCat = categories.find(c => c.id === cat || c.name.toLowerCase() === String(cat).toLowerCase());
+            if (matchedCat) { setCat(matchedCat.id); appliedSomething = true; }
+          }
+
+          if (!appliedSomething) {
+            alert(`Gemini respondió pero no pude reconocer los datos dentro. Respuesta recibida:\n\n${JSON.stringify(parsed).slice(0, 400)}`);
+          }
         }
       } else if (result.error?.message) {
         alert(`Error de Google Gemini: ${result.error.message}`);

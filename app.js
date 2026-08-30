@@ -580,14 +580,16 @@ function ExpenseTrackerApp() {
   const [isScanning, setIsScanning] = useState(false);
   const [isListening, setIsListening] = useState(false);
 
-  const handleSmartScan = async (promptText, setDesc, setAmt, setCat) => {
+  const handleSmartScan = async (promptText, setDesc, setAmt, setCat, setFeedback) => {
+    const notify = setFeedback || (() => {});
     if (!promptText || isScanning) return;
     setIsScanning(true);
+    notify({ type: 'info', text: 'Consultando a Gemini...' });
     try {
       const systemPrompt = `Eres una IA de finanzas. Del mensaje del usuario, extraé: una descripción corta, el monto numérico (sin símbolos de moneda ni separadores de miles, usando punto decimal si hace falta) y la categoría más apropiada, elegida EXACTAMENTE de esta lista de IDs válidos: ${categories.map(c => c.id).join(', ')}. Respondé ÚNICAMENTE con un objeto JSON válido, sin texto adicional, sin explicaciones y sin bloques de código markdown, con exactamente esta forma: {"description": "...", "amount": 0, "category": "..."}`;
       const apiKey = settings.geminiApiKey || "";
       if (!apiKey) {
-        alert('Para usar el autocompletado con IA, cargá tu clave de Gemini en Ajustes → Asistente de IA (Gemini).');
+        notify({ type: 'error', text: 'Para usar el autocompletado con IA, cargá tu clave de Gemini en Ajustes → Asistente de IA (Gemini).' });
         setIsScanning(false);
         return;
       }
@@ -613,7 +615,7 @@ function ExpenseTrackerApp() {
             if (nestedKey) parsed = parsed[nestedKey];
           }
         } catch (parseErr) {
-          alert(`La IA respondió pero no en el formato esperado. Probá reformular el texto.\n\nRespuesta recibida: ${rawText.slice(0, 300)}`);
+          notify({ type: 'error', text: `La IA respondió pero no en el formato esperado. Respuesta: ${rawText.slice(0, 250)}` });
         }
         if (parsed) {
           const desc = parsed.description ?? parsed.descripcion ?? parsed.desc;
@@ -631,27 +633,34 @@ function ExpenseTrackerApp() {
             if (matchedCat) { setCat(matchedCat.id); appliedSomething = true; }
           }
 
-          if (!appliedSomething) {
-            alert(`Gemini respondió pero no pude reconocer los datos dentro. Respuesta recibida:\n\n${JSON.stringify(parsed).slice(0, 400)}`);
+          if (appliedSomething) {
+            notify({ type: 'success', text: '¡Listo! Se completaron los campos.' });
+          } else {
+            notify({ type: 'error', text: `Gemini respondió pero no reconocí los datos. Respuesta: ${JSON.stringify(parsed).slice(0, 350)}` });
           }
         }
       } else if (result.error?.message) {
-        alert(`Error de Google Gemini: ${result.error.message}`);
+        notify({ type: 'error', text: `Error de Google Gemini: ${result.error.message}` });
       } else {
-        alert('No se recibió respuesta de la IA. Probá de nuevo en unos segundos.');
+        notify({ type: 'error', text: `No se recibió una respuesta utilizable de la IA. Respuesta cruda: ${JSON.stringify(result).slice(0, 300)}` });
       }
     } catch(e) {
       console.error(e);
-      alert(`Ocurrió un error al usar el autocompletado: ${e.message || e}`);
+      notify({ type: 'error', text: `Ocurrió un error al usar el autocompletado: ${e.message || e}` });
     } finally {
       setIsScanning(false);
     }
   };
 
-  const startVoiceDictation = (setSmartText, setDesc, setAmt, setCat) => {
+  const startVoiceDictation = (setSmartText, setDesc, setAmt, setCat, setFeedback) => {
+    const notify = setFeedback || (() => {});
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Tu navegador no soporta el reconocimiento de voz por micrófono.");
+      notify({ type: 'error', text: 'Este navegador no soporta el reconocimiento de voz por micrófono. Probá escribiendo el texto directamente.' });
+      return;
+    }
+    if (!window.isSecureContext) {
+      notify({ type: 'error', text: 'El micrófono solo funciona en conexiones seguras (https). Revisá que la URL empiece con https://.' });
       return;
     }
     const recognition = new SpeechRecognition();
@@ -660,11 +669,25 @@ function ExpenseTrackerApp() {
     recognition.maxAlternatives = 1;
 
     setIsListening(true);
+    notify({ type: 'info', text: 'Escuchando... hablá ahora.' });
+
+    recognition.onspeechend = () => {
+      notify({ type: 'info', text: 'Procesando lo que dijiste...' });
+    };
     recognition.onresult = (event) => {
-      const speechResult = event.results[0][0].transcript;
-      setSmartText(speechResult);
+      const speechResult = event.results?.[0]?.[0]?.transcript;
       setIsListening(false);
-      handleSmartScan(speechResult, setDesc, setAmt, setCat);
+      if (!speechResult) {
+        notify({ type: 'error', text: 'No se pudo transcribir el audio. Probá de nuevo o escribí el texto.' });
+        return;
+      }
+      setSmartText(speechResult);
+      notify({ type: 'info', text: `Se entendió: "${speechResult}". Analizando con Gemini...` });
+      handleSmartScan(speechResult, setDesc, setAmt, setCat, setFeedback);
+    };
+    recognition.onnomatch = () => {
+      setIsListening(false);
+      notify({ type: 'error', text: 'No se entendió lo que dijiste. Probá de nuevo hablando claro.' });
     };
     recognition.onerror = (event) => {
       setIsListening(false);
@@ -677,8 +700,8 @@ function ExpenseTrackerApp() {
         'aborted': null
       };
       const msg = errorMessages[event.error];
-      if (msg) alert(msg);
-      else if (msg === undefined) alert(`No se pudo usar el micrófono (${event.error}). Probá de nuevo.`);
+      if (msg) notify({ type: 'error', text: msg });
+      else if (msg === undefined) notify({ type: 'error', text: `No se pudo usar el micrófono (${event.error}). Probá de nuevo.` });
     };
     recognition.onend = () => {
       setIsListening(false);
@@ -687,7 +710,7 @@ function ExpenseTrackerApp() {
       recognition.start();
     } catch (e) {
       setIsListening(false);
-      alert('No se pudo iniciar el micrófono. Probá de nuevo.');
+      notify({ type: 'error', text: 'No se pudo iniciar el micrófono. Probá de nuevo.' });
     }
   };
 
@@ -1444,6 +1467,7 @@ function ExpenseTrackerApp() {
     const [amountInput, setAmountInput] = useState('');
     const [description, setDescription] = useState('');
     const [smartInputText, setSmartInputText] = useState('');
+    const [smartFeedback, setSmartFeedback] = useState(null); // { type: 'error'|'info', text: '...' } | null
     
     const availableCategories = categories.filter(c => c.type === (type === 'ahorro' ? 'gasto' : type));
     const [categoryId, setCategoryId] = useState(availableCategories.length > 0 ? availableCategories[0].id : '');
@@ -1588,7 +1612,7 @@ function ExpenseTrackerApp() {
             </div>
             <button
               type="button"
-              onClick={() => startVoiceDictation(setSmartInputText, setDescription, setAmountInput, setCategoryId)}
+              onClick={() => { setSmartFeedback(null); startVoiceDictation(setSmartInputText, setDescription, setAmountInput, setCategoryId, setSmartFeedback); }}
               className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-white/20 hover:bg-white/30 text-white border border-white/20 backdrop-blur-sm'}`}
               title="Dictar por micrófono"
             >
@@ -1606,12 +1630,17 @@ function ExpenseTrackerApp() {
             <button 
               type="button"
               disabled={isScanning || !smartInputText}
-              onClick={() => handleSmartScan(smartInputText, setDescription, setAmountInput, setCategoryId)}
+              onClick={() => { setSmartFeedback(null); handleSmartScan(smartInputText, setDescription, setAmountInput, setCategoryId, setSmartFeedback); }}
               className="bg-white text-blue-600 font-bold px-3 py-2 rounded-xl text-xs shadow-sm hover:bg-blue-50 transition-colors disabled:opacity-50"
             >
               {isScanning ? 'Analizando...' : 'Auto-llenar'}
             </button>
           </div>
+          {smartFeedback && (
+            <div className={`mt-3 p-2.5 rounded-xl text-xs font-medium leading-snug ${smartFeedback.type === 'error' ? 'bg-red-500/20 border border-red-300/40 text-white' : smartFeedback.type === 'success' ? 'bg-green-500/20 border border-green-300/40 text-white' : 'bg-white/15 border border-white/20 text-white'}`}>
+              {smartFeedback.text}
+            </div>
+          )}
         </div>
         
         <form onSubmit={handleSubmit} className="space-y-6">

@@ -510,7 +510,7 @@ function ExpenseTrackerApp() {
         setAiLoading(false);
         return;
       }
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${apiKey}`;
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
       const payload = {
         contents: [{ parts: [{ text: userPrompt }] }],
@@ -528,11 +528,15 @@ function ExpenseTrackerApp() {
       if (candidate && candidate.content?.parts?.[0]?.text) {
         const reply = candidate.content.parts[0].text;
         setAiMessages(prev => [...prev, { role: 'model', text: reply }]);
+      } else if (result.error?.message) {
+        setAiMessages(prev => [...prev, { role: 'model', text: `Error de Google Gemini: ${result.error.message}` }]);
+      } else if (candidate?.finishReason === 'SAFETY') {
+        setAiMessages(prev => [...prev, { role: 'model', text: 'La respuesta fue bloqueada por los filtros de seguridad de Gemini. Probá reformular la pregunta.' }]);
       } else {
         setAiMessages(prev => [...prev, { role: 'model', text: 'Lo siento, no pude procesar tu consulta en este momento.' }]);
       }
     } catch (err) {
-      setAiMessages(prev => [...prev, { role: 'model', text: 'Ocurrió un error al conectar con el asistente de IA.' }]);
+      setAiMessages(prev => [...prev, { role: 'model', text: `Ocurrió un error al conectar con el asistente de IA: ${err.message || err}` }]);
     } finally {
       setAiLoading(false);
     }
@@ -553,7 +557,7 @@ function ExpenseTrackerApp() {
         setIsScanning(false);
         return;
       }
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${apiKey}`;
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
       const payload = {
         contents: [{ parts: [{ text: promptText }] }],
         generationConfig: {

@@ -1536,12 +1536,18 @@ function ExpenseTrackerApp() {
       return parseFloat(clean) || 1;
     };
 
+    const prevTypeRef = useRef(type);
     useEffect(() => {
       if (type !== 'ahorro') {
         const avail = categories.filter(c => c.type === type);
-        if (avail.length > 0) setCategoryId(avail[0].id);
-        else setCategoryId('');
+        const typeActuallyChanged = prevTypeRef.current !== type;
+        const currentStillValid = avail.some(c => c.id === categoryId);
+        if (typeActuallyChanged || !currentStillValid) {
+          setCategoryId(avail.length > 0 ? avail[0].id : '');
+        }
       }
+      prevTypeRef.current = type;
+      // eslint-disable-next-line
     }, [type, categories]);
 
     const handleAmountChange = (e) => {

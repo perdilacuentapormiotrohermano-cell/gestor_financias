@@ -169,6 +169,386 @@ const AiChatInputForm = ({ isDarkMode, isLoading, onSend }) => {
   );
 };
 
+const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, settings, isDarkMode, transactions, setTransactions, setEmergencyFund, savingsGoals, setSavingsGoals, setActiveTab, handleSmartScan, startVoiceDictation, isScanning, isListening }) => {
+    const [type, setType] = useState('gasto');
+    const [amountInput, setAmountInput] = useState('');
+    const [description, setDescription] = useState('');
+    const [smartInputText, setSmartInputText] = useState('');
+    const [smartFeedback, setSmartFeedback] = useState(null); // { type: 'error'|'info', text: '...' } | null
+    
+    const availableCategories = categories.filter(c => c.type === (type === 'ahorro' ? 'gasto' : type));
+    const [categoryId, setCategoryId] = useState(availableCategories.length > 0 ? availableCategories[0].id : '');
+    const [typeClassification, setTypeClassification] = useState(typesList.length > 0 ? typesList[0].id : 'diario');
+    const [methodId, setMethodId] = useState(paymentMethods.length > 0 ? paymentMethods[0].id : '');
+    const [destBankId, setDestBankId] = useState('');
+    const [targetGoalId, setTargetGoalId] = useState('emergency');
+    
+    const [selectedDateMode, setSelectedDateMode] = useState('hoy');
+    const [manualDate, setManualDate] = useState(() => {
+      const now = new Date();
+      return now.toISOString().split('T')[0];
+    });
+
+    const [txCurrency, setTxCurrency] = useState(settings.currency);
+    const [exchangeRate, setExchangeRate] = useState('');
+    const [isFetchingRate, setIsFetchingRate] = useState(false);
+
+    useEffect(() => {
+      if (txCurrency !== settings.currency) {
+        setIsFetchingRate(true);
+        fetch(`https://open.er-api.com/v6/latest/${txCurrency}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.rates && data.rates[settings.currency]) {
+              const rate = data.rates[settings.currency];
+              setExchangeRate(rate.toLocaleString('es-AR', { maximumFractionDigits: 4 }));
+            }
+            setIsFetchingRate(false);
+          })
+          .catch(() => setIsFetchingRate(false));
+      } else {
+        setExchangeRate('');
+      }
+    }, [txCurrency, settings.currency]);
+
+    const handleExchangeRateChange = (e) => {
+      let val = e.target.value.replace(/[^0-9,]/g, '');
+      const parts = val.split(',');
+      if (parts.length > 2) return;
+      setExchangeRate(val);
+    };
+
+    const getNumericExchangeRate = () => {
+      if (!exchangeRate) return 1;
+      let clean = exchangeRate.replace(/\./g, '').replace(',', '.');
+      return parseFloat(clean) || 1;
+    };
+
+    const prevTypeRef = useRef(type);
+    useEffect(() => {
+      if (type !== 'ahorro') {
+        const avail = categories.filter(c => c.type === type);
+        const typeActuallyChanged = prevTypeRef.current !== type;
+        const currentStillValid = avail.some(c => c.id === categoryId);
+        if (typeActuallyChanged || !currentStillValid) {
+          setCategoryId(avail.length > 0 ? avail[0].id : '');
+        }
+      }
+      prevTypeRef.current = type;
+      // eslint-disable-next-line
+    }, [type, categories]);
+
+    const handleAmountChange = (e) => {
+      let val = e.target.value;
+      val = val.replace(/[^0-9,]/g, '');
+      const parts = val.split(',');
+      if (parts.length > 2) return;
+
+      let integerPart = parts[0];
+      let decimalPart = parts[1] !== undefined ? ',' + parts[1].substring(0, 2) : '';
+
+      if (integerPart) {
+        integerPart = parseInt(integerPart, 10).toLocaleString('es-AR');
+      }
+
+      setAmountInput(integerPart + decimalPart);
+    };
+
+    const getNumericAmount = () => {
+      if (!amountInput) return 0;
+      let clean = amountInput.replace(/\./g, '').replace(',', '.');
+      return parseFloat(clean) || 0;
+    };
+
+    const getDateToSave = () => {
+      const now = new Date();
+      if (selectedDateMode === 'hoy') {
+        return now.toISOString();
+      } else if (selectedDateMode === 'ayer') {
+        const d = new Date(now.getTime() - 86400000);
+        return d.toISOString();
+      } else if (selectedDateMode === 'hace2dias') {
+        const d = new Date(now.getTime() - 86400000 * 2);
+        return d.toISOString();
+      } else {
+        return new Date(manualDate + 'T00:00:00').toISOString();
+      }
+    };
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      const originalAmount = getNumericAmount();
+      if (originalAmount <= 0) return;
+
+      const rate = txCurrency === settings.currency ? 1 : getNumericExchangeRate();
+      const finalAmount = originalAmount * rate;
+
+      if (type === 'ahorro') {
+        if (targetGoalId === 'emergency') {
+          setEmergencyFund(prev => ({ ...prev, current: prev.current + finalAmount }));
+        } else {
+          setSavingsGoals(savingsGoals.map(g => g.id === targetGoalId ? { ...g, current: Math.min(g.current + finalAmount, g.target) } : g));
+        }
+      }
+
+      const newTransaction = {
+        id: Date.now(),
+        type,
+        amount: finalAmount,
+        originalAmount: originalAmount,
+        originalCurrency: txCurrency,
+        exchangeRate: rate,
+        description: type === 'ahorro' ? (targetGoalId === 'emergency' ? 'Aporte Fondo de Emergencia' : `Aporte Meta: ${savingsGoals.find(g => g.id === targetGoalId)?.name || ''}`) : description,
+        category: type === 'ahorro' ? 'ahorro' : categoryId,
+        typeClassification: type === 'ahorro' ? 'otro' : typeClassification,
+        methodId: type === 'gasto' ? methodId : null,
+        bankId: type === 'ingreso' ? (destBankId || null) : null,
+        date: getDateToSave()
+      };
+
+      setTransactions([newTransaction, ...transactions]);
+      setActiveTab('dashboard');
+    };
+
+    return (
+      <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-right-4 duration-300`}>
+        <div className="flex justify-between items-center mb-6 mt-2">
+          <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Nuevo Movimiento</h1>
+        </div>
+
+        {/* Gemini Smart Auto-fill Box with Mic */}
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-4 text-white shadow-md mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <SparkleIcon />
+              <h3 className="font-bold text-xs uppercase tracking-wider">Auto-completar Inteligente</h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setSmartFeedback(null); startVoiceDictation(setSmartInputText, setDescription, setAmountInput, setCategoryId, setSmartFeedback); }}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-white/20 hover:bg-white/30 text-white border border-white/20 backdrop-blur-sm'}`}
+              title="Dictar por micrófono"
+            >
+              <MicIcon /> {isListening ? 'Escuchando...' : 'Dictar'}
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <input 
+              type="text"
+              value={smartInputText}
+              onChange={e => setSmartInputText(e.target.value)}
+              placeholder="Ej. Gasté 15000 en el supermercado ayer"
+              className="bg-white/20 placeholder-white/70 text-white rounded-xl px-3 py-2 text-xs flex-1 outline-none backdrop-blur-sm border border-white/20"
+            />
+            <button 
+              type="button"
+              disabled={isScanning || !smartInputText}
+              onClick={() => { setSmartFeedback(null); handleSmartScan(smartInputText, setDescription, setAmountInput, setCategoryId, setSmartFeedback); }}
+              className="bg-white text-blue-600 font-bold px-3 py-2 rounded-xl text-xs shadow-sm hover:bg-blue-50 transition-colors disabled:opacity-50"
+            >
+              {isScanning ? 'Analizando...' : 'Auto-llenar'}
+            </button>
+          </div>
+          {smartFeedback && (
+            <div className={`mt-3 p-2.5 rounded-xl text-xs font-medium leading-snug ${smartFeedback.type === 'error' ? 'bg-red-500/20 border border-red-300/40 text-white' : smartFeedback.type === 'success' ? 'bg-green-500/20 border border-green-300/40 text-white' : 'bg-white/15 border border-white/20 text-white'}`}>
+              {smartFeedback.text}
+            </div>
+          )}
+        </div>
+        
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className={`${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-gray-200/60 text-gray-500'} p-1 rounded-xl flex w-full`}>
+            <button 
+              type="button" 
+              onClick={() => setType('gasto')}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${type === 'gasto' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
+            >
+              Gasto
+            </button>
+            <button 
+              type="button" 
+              onClick={() => setType('ingreso')}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${type === 'ingreso' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
+            >
+              Ingreso
+            </button>
+            <button 
+              type="button" 
+              onClick={() => setType('ahorro')}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${type === 'ahorro' ? (isDarkMode ? 'bg-slate-800 text-emerald-400 font-bold shadow-sm' : 'bg-white text-emerald-600 font-bold shadow-sm') : ''}`}
+            >
+              🎯 Ahorro
+            </button>
+          </div>
+
+          <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-6 shadow-sm border text-center`}>
+            <div className="flex justify-between items-center mb-2">
+              <label className={`text-sm font-medium ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Importe</label>
+              <select
+                value={txCurrency}
+                onChange={(e) => setTxCurrency(e.target.value)}
+                className={`${isDarkMode ? 'bg-slate-800 text-slate-200 border-slate-700' : 'bg-gray-100 text-gray-700 border-gray-200'} border rounded-lg px-2 py-1 text-xs font-bold outline-none`}
+              >
+                <option value="ARS">ARS</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </div>
+            <div className={`flex items-center justify-center text-4xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+              <span className="text-gray-400 mr-1">{txCurrency === 'USD' ? 'U$S' : txCurrency === 'EUR' ? '€' : '$'}</span>
+              <input 
+                type="text" 
+                value={amountInput}
+                onChange={handleAmountChange}
+                placeholder="0,00"
+                className="w-full max-w-[240px] bg-transparent outline-none text-center appearance-none"
+                required
+                autoFocus
+                inputMode="decimal"
+              />
+            </div>
+            {txCurrency !== settings.currency && (
+              <div className={`mt-4 pt-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-gray-100'} text-left animate-in fade-in slide-in-from-top-2`}>
+                <label className={`block text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} mb-1`}>
+                  Tipo de cambio ({txCurrency} a {settings.currency}) {isFetchingRate && <span className="text-blue-500 animate-pulse font-normal ml-2">Obteniendo...</span>}
+                </label>
+                <div className={`flex items-center ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl px-3 py-2`}>
+                  <span className="text-gray-500 text-sm font-bold mr-2">1 {txCurrency} = </span>
+                  <input
+                    type="text"
+                    value={exchangeRate}
+                    onChange={handleExchangeRateChange}
+                    placeholder="Ej. 1000,50"
+                    className="bg-transparent w-full outline-none font-semibold text-sm"
+                    inputMode="decimal"
+                    required
+                  />
+                  <span className="text-gray-500 text-sm font-bold ml-2">{settings.currency}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border space-y-4`}>
+              {type === 'ahorro' ? (
+                <div>
+                  <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>Destino del Ahorro</label>
+                  <select 
+                    value={targetGoalId}
+                    onChange={(e) => setTargetGoalId(e.target.value)}
+                    className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} border rounded-xl p-3 outline-none font-bold text-sm`}
+                  >
+                    <option value="emergency">🛡️ Fondo de Emergencia</option>
+                    {savingsGoals.map(g => (
+                      <option key={g.id} value={g.id}>🎯 {g.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <>
+                  <input 
+                    type="text" 
+                    placeholder="Descripción (ej. Supermercado, Sueldo)" 
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} border rounded-xl p-3 outline-none focus:border-blue-300 transition-colors text-sm font-medium`}
+                    required
+                  />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={`block text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-1`}>Categoría</label>
+                      <select 
+                        value={categoryId}
+                        onChange={(e) => setCategoryId(e.target.value)}
+                        className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} border rounded-xl p-2.5 text-sm outline-none capitalize focus:border-blue-300`}
+                        required
+                      >
+                        {availableCategories.length === 0 && <option value="" disabled>Sin categorías</option>}
+                        {availableCategories.map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={`block text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-1`}>Clasificación</label>
+                      <select 
+                        value={typeClassification}
+                        onChange={(e) => setTypeClassification(e.target.value)}
+                        className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} border rounded-xl p-2.5 text-sm outline-none capitalize focus:border-blue-300`}
+                      >
+                        {typesList.map(t => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className={`${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} p-3 rounded-xl border`}>
+                  <label className={`block text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>Fecha del movimiento</label>
+                  <div className="flex gap-2">
+                      <button type="button" onClick={() => setSelectedDateMode('hoy')} className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${selectedDateMode === 'hoy' ? 'bg-blue-500/10 border-blue-500/30 text-blue-400 shadow-sm' : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-gray-200 text-gray-600')}`}>Hoy</button>
+                      <button type="button" onClick={() => setSelectedDateMode('ayer')} className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${selectedDateMode === 'ayer' ? 'bg-blue-500/10 border-blue-500/30 text-blue-400 shadow-sm' : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-gray-200 text-gray-600')}`}>Ayer</button>
+                      <button type="button" onClick={() => setSelectedDateMode('manual')} className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${selectedDateMode === 'manual' ? 'bg-blue-500/10 border-blue-500/30 text-blue-400 shadow-sm' : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-gray-200 text-gray-600')}`}>Otra</button>
+                  </div>
+                  {selectedDateMode === 'manual' && (
+                      <input type="date" value={manualDate} onChange={e => setManualDate(e.target.value)} className={`w-full mt-2 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} border rounded-lg p-2 text-sm outline-none font-medium`} required />
+                  )}
+              </div>
+
+              {type !== 'ahorro' && (
+                <div>
+                  <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>
+                    {type === 'ingreso' ? 'Cuenta Bancaria (Destino)' : 'Medio de Pago / Tarjeta'}
+                  </label>
+                  <div className="relative">
+                    {type === 'ingreso' ? (
+                      <select 
+                        value={destBankId}
+                        onChange={(e) => setDestBankId(e.target.value)}
+                        className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} border rounded-xl p-3 outline-none font-bold appearance-none focus:border-blue-300 transition-colors text-sm`}
+                      >
+                        <option value="">Efectivo / Sin Cuenta vinculada</option>
+                        {bankAccounts.map(b => (
+                          <option key={b.id} value={b.id}>{b.bankName} - {b.accountType}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <select 
+                        value={methodId}
+                        onChange={(e) => setMethodId(Number(e.target.value))}
+                        className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} border rounded-xl p-3 outline-none font-bold appearance-none focus:border-blue-300 transition-colors text-sm`}
+                        required
+                      >
+                        {paymentMethods.length === 0 && <option value="" disabled>Sin métodos agregados</option>}
+                        {paymentMethods.map(m => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                    )}
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <button 
+            type="submit" 
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg py-4 rounded-2xl shadow-lg shadow-blue-500/30 transition-all active:scale-95 mt-4"
+          >
+            Guardar Movimiento
+          </button>
+        </form>
+      </div>
+    );
+  };
+
 function ExpenseTrackerApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [subTab, setSubTab] = useState('historial');
@@ -1481,385 +1861,6 @@ function ExpenseTrackerApp() {
     );
   };
 
-  const AddTransaction = () => {
-    const [type, setType] = useState('gasto');
-    const [amountInput, setAmountInput] = useState('');
-    const [description, setDescription] = useState('');
-    const [smartInputText, setSmartInputText] = useState('');
-    const [smartFeedback, setSmartFeedback] = useState(null); // { type: 'error'|'info', text: '...' } | null
-    
-    const availableCategories = categories.filter(c => c.type === (type === 'ahorro' ? 'gasto' : type));
-    const [categoryId, setCategoryId] = useState(availableCategories.length > 0 ? availableCategories[0].id : '');
-    const [typeClassification, setTypeClassification] = useState(typesList.length > 0 ? typesList[0].id : 'diario');
-    const [methodId, setMethodId] = useState(paymentMethods.length > 0 ? paymentMethods[0].id : '');
-    const [destBankId, setDestBankId] = useState('');
-    const [targetGoalId, setTargetGoalId] = useState('emergency');
-    
-    const [selectedDateMode, setSelectedDateMode] = useState('hoy');
-    const [manualDate, setManualDate] = useState(() => {
-      const now = new Date();
-      return now.toISOString().split('T')[0];
-    });
-
-    const [txCurrency, setTxCurrency] = useState(settings.currency);
-    const [exchangeRate, setExchangeRate] = useState('');
-    const [isFetchingRate, setIsFetchingRate] = useState(false);
-
-    useEffect(() => {
-      if (txCurrency !== settings.currency) {
-        setIsFetchingRate(true);
-        fetch(`https://open.er-api.com/v6/latest/${txCurrency}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data && data.rates && data.rates[settings.currency]) {
-              const rate = data.rates[settings.currency];
-              setExchangeRate(rate.toLocaleString('es-AR', { maximumFractionDigits: 4 }));
-            }
-            setIsFetchingRate(false);
-          })
-          .catch(() => setIsFetchingRate(false));
-      } else {
-        setExchangeRate('');
-      }
-    }, [txCurrency, settings.currency]);
-
-    const handleExchangeRateChange = (e) => {
-      let val = e.target.value.replace(/[^0-9,]/g, '');
-      const parts = val.split(',');
-      if (parts.length > 2) return;
-      setExchangeRate(val);
-    };
-
-    const getNumericExchangeRate = () => {
-      if (!exchangeRate) return 1;
-      let clean = exchangeRate.replace(/\./g, '').replace(',', '.');
-      return parseFloat(clean) || 1;
-    };
-
-    const prevTypeRef = useRef(type);
-    useEffect(() => {
-      if (type !== 'ahorro') {
-        const avail = categories.filter(c => c.type === type);
-        const typeActuallyChanged = prevTypeRef.current !== type;
-        const currentStillValid = avail.some(c => c.id === categoryId);
-        if (typeActuallyChanged || !currentStillValid) {
-          setCategoryId(avail.length > 0 ? avail[0].id : '');
-        }
-      }
-      prevTypeRef.current = type;
-      // eslint-disable-next-line
-    }, [type, categories]);
-
-    const handleAmountChange = (e) => {
-      let val = e.target.value;
-      val = val.replace(/[^0-9,]/g, '');
-      const parts = val.split(',');
-      if (parts.length > 2) return;
-
-      let integerPart = parts[0];
-      let decimalPart = parts[1] !== undefined ? ',' + parts[1].substring(0, 2) : '';
-
-      if (integerPart) {
-        integerPart = parseInt(integerPart, 10).toLocaleString('es-AR');
-      }
-
-      setAmountInput(integerPart + decimalPart);
-    };
-
-    const getNumericAmount = () => {
-      if (!amountInput) return 0;
-      let clean = amountInput.replace(/\./g, '').replace(',', '.');
-      return parseFloat(clean) || 0;
-    };
-
-    const getDateToSave = () => {
-      const now = new Date();
-      if (selectedDateMode === 'hoy') {
-        return now.toISOString();
-      } else if (selectedDateMode === 'ayer') {
-        const d = new Date(now.getTime() - 86400000);
-        return d.toISOString();
-      } else if (selectedDateMode === 'hace2dias') {
-        const d = new Date(now.getTime() - 86400000 * 2);
-        return d.toISOString();
-      } else {
-        return new Date(manualDate + 'T00:00:00').toISOString();
-      }
-    };
-
-    const handleSubmit = (e) => {
-      e.preventDefault();
-      const originalAmount = getNumericAmount();
-      if (originalAmount <= 0) return;
-
-      const rate = txCurrency === settings.currency ? 1 : getNumericExchangeRate();
-      const finalAmount = originalAmount * rate;
-
-      if (type === 'ahorro') {
-        if (targetGoalId === 'emergency') {
-          setEmergencyFund(prev => ({ ...prev, current: prev.current + finalAmount }));
-        } else {
-          setSavingsGoals(savingsGoals.map(g => g.id === targetGoalId ? { ...g, current: Math.min(g.current + finalAmount, g.target) } : g));
-        }
-      }
-
-      const newTransaction = {
-        id: Date.now(),
-        type,
-        amount: finalAmount,
-        originalAmount: originalAmount,
-        originalCurrency: txCurrency,
-        exchangeRate: rate,
-        description: type === 'ahorro' ? (targetGoalId === 'emergency' ? 'Aporte Fondo de Emergencia' : `Aporte Meta: ${savingsGoals.find(g => g.id === targetGoalId)?.name || ''}`) : description,
-        category: type === 'ahorro' ? 'ahorro' : categoryId,
-        typeClassification: type === 'ahorro' ? 'otro' : typeClassification,
-        methodId: type === 'gasto' ? methodId : null,
-        bankId: type === 'ingreso' ? (destBankId || null) : null,
-        date: getDateToSave()
-      };
-
-      setTransactions([newTransaction, ...transactions]);
-      setActiveTab('dashboard');
-    };
-
-    return (
-      <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-right-4 duration-300`}>
-        <div className="flex justify-between items-center mb-6 mt-2">
-          <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Nuevo Movimiento</h1>
-        </div>
-
-        {/* Gemini Smart Auto-fill Box with Mic */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-4 text-white shadow-md mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <SparkleIcon />
-              <h3 className="font-bold text-xs uppercase tracking-wider">Auto-completar Inteligente</h3>
-            </div>
-            <button
-              type="button"
-              onClick={() => { setSmartFeedback(null); startVoiceDictation(setSmartInputText, setDescription, setAmountInput, setCategoryId, setSmartFeedback); }}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-white/20 hover:bg-white/30 text-white border border-white/20 backdrop-blur-sm'}`}
-              title="Dictar por micrófono"
-            >
-              <MicIcon /> {isListening ? 'Escuchando...' : 'Dictar'}
-            </button>
-          </div>
-          <div className="flex gap-2">
-            <input 
-              type="text"
-              value={smartInputText}
-              onChange={e => setSmartInputText(e.target.value)}
-              placeholder="Ej. Gasté 15000 en el supermercado ayer"
-              className="bg-white/20 placeholder-white/70 text-white rounded-xl px-3 py-2 text-xs flex-1 outline-none backdrop-blur-sm border border-white/20"
-            />
-            <button 
-              type="button"
-              disabled={isScanning || !smartInputText}
-              onClick={() => { setSmartFeedback(null); handleSmartScan(smartInputText, setDescription, setAmountInput, setCategoryId, setSmartFeedback); }}
-              className="bg-white text-blue-600 font-bold px-3 py-2 rounded-xl text-xs shadow-sm hover:bg-blue-50 transition-colors disabled:opacity-50"
-            >
-              {isScanning ? 'Analizando...' : 'Auto-llenar'}
-            </button>
-          </div>
-          {smartFeedback && (
-            <div className={`mt-3 p-2.5 rounded-xl text-xs font-medium leading-snug ${smartFeedback.type === 'error' ? 'bg-red-500/20 border border-red-300/40 text-white' : smartFeedback.type === 'success' ? 'bg-green-500/20 border border-green-300/40 text-white' : 'bg-white/15 border border-white/20 text-white'}`}>
-              {smartFeedback.text}
-            </div>
-          )}
-        </div>
-        
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className={`${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-gray-200/60 text-gray-500'} p-1 rounded-xl flex w-full`}>
-            <button 
-              type="button" 
-              onClick={() => setType('gasto')}
-              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${type === 'gasto' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
-            >
-              Gasto
-            </button>
-            <button 
-              type="button" 
-              onClick={() => setType('ingreso')}
-              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${type === 'ingreso' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
-            >
-              Ingreso
-            </button>
-            <button 
-              type="button" 
-              onClick={() => setType('ahorro')}
-              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${type === 'ahorro' ? (isDarkMode ? 'bg-slate-800 text-emerald-400 font-bold shadow-sm' : 'bg-white text-emerald-600 font-bold shadow-sm') : ''}`}
-            >
-              🎯 Ahorro
-            </button>
-          </div>
-
-          <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-6 shadow-sm border text-center`}>
-            <div className="flex justify-between items-center mb-2">
-              <label className={`text-sm font-medium ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Importe</label>
-              <select
-                value={txCurrency}
-                onChange={(e) => setTxCurrency(e.target.value)}
-                className={`${isDarkMode ? 'bg-slate-800 text-slate-200 border-slate-700' : 'bg-gray-100 text-gray-700 border-gray-200'} border rounded-lg px-2 py-1 text-xs font-bold outline-none`}
-              >
-                <option value="ARS">ARS</option>
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-              </select>
-            </div>
-            <div className={`flex items-center justify-center text-4xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-              <span className="text-gray-400 mr-1">{txCurrency === 'USD' ? 'U$S' : txCurrency === 'EUR' ? '€' : '$'}</span>
-              <input 
-                type="text" 
-                value={amountInput}
-                onChange={handleAmountChange}
-                placeholder="0,00"
-                className="w-full max-w-[240px] bg-transparent outline-none text-center appearance-none"
-                required
-                autoFocus
-                inputMode="decimal"
-              />
-            </div>
-            {txCurrency !== settings.currency && (
-              <div className={`mt-4 pt-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-gray-100'} text-left animate-in fade-in slide-in-from-top-2`}>
-                <label className={`block text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} mb-1`}>
-                  Tipo de cambio ({txCurrency} a {settings.currency}) {isFetchingRate && <span className="text-blue-500 animate-pulse font-normal ml-2">Obteniendo...</span>}
-                </label>
-                <div className={`flex items-center ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl px-3 py-2`}>
-                  <span className="text-gray-500 text-sm font-bold mr-2">1 {txCurrency} = </span>
-                  <input
-                    type="text"
-                    value={exchangeRate}
-                    onChange={handleExchangeRateChange}
-                    placeholder="Ej. 1000,50"
-                    className="bg-transparent w-full outline-none font-semibold text-sm"
-                    inputMode="decimal"
-                    required
-                  />
-                  <span className="text-gray-500 text-sm font-bold ml-2">{settings.currency}</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-4">
-            <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border space-y-4`}>
-              {type === 'ahorro' ? (
-                <div>
-                  <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>Destino del Ahorro</label>
-                  <select 
-                    value={targetGoalId}
-                    onChange={(e) => setTargetGoalId(e.target.value)}
-                    className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} border rounded-xl p-3 outline-none font-bold text-sm`}
-                  >
-                    <option value="emergency">🛡️ Fondo de Emergencia</option>
-                    {savingsGoals.map(g => (
-                      <option key={g.id} value={g.id}>🎯 {g.name}</option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <>
-                  <input 
-                    type="text" 
-                    placeholder="Descripción (ej. Supermercado, Sueldo)" 
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} border rounded-xl p-3 outline-none focus:border-blue-300 transition-colors text-sm font-medium`}
-                    required
-                  />
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={`block text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-1`}>Categoría</label>
-                      <select 
-                        value={categoryId}
-                        onChange={(e) => setCategoryId(e.target.value)}
-                        className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} border rounded-xl p-2.5 text-sm outline-none capitalize focus:border-blue-300`}
-                        required
-                      >
-                        {availableCategories.length === 0 && <option value="" disabled>Sin categorías</option>}
-                        {availableCategories.map(c => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={`block text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-1`}>Clasificación</label>
-                      <select 
-                        value={typeClassification}
-                        onChange={(e) => setTypeClassification(e.target.value)}
-                        className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} border rounded-xl p-2.5 text-sm outline-none capitalize focus:border-blue-300`}
-                      >
-                        {typesList.map(t => (
-                          <option key={t.id} value={t.id}>{t.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <div className={`${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} p-3 rounded-xl border`}>
-                  <label className={`block text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>Fecha del movimiento</label>
-                  <div className="flex gap-2">
-                      <button type="button" onClick={() => setSelectedDateMode('hoy')} className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${selectedDateMode === 'hoy' ? 'bg-blue-500/10 border-blue-500/30 text-blue-400 shadow-sm' : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-gray-200 text-gray-600')}`}>Hoy</button>
-                      <button type="button" onClick={() => setSelectedDateMode('ayer')} className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${selectedDateMode === 'ayer' ? 'bg-blue-500/10 border-blue-500/30 text-blue-400 shadow-sm' : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-gray-200 text-gray-600')}`}>Ayer</button>
-                      <button type="button" onClick={() => setSelectedDateMode('manual')} className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${selectedDateMode === 'manual' ? 'bg-blue-500/10 border-blue-500/30 text-blue-400 shadow-sm' : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-gray-200 text-gray-600')}`}>Otra</button>
-                  </div>
-                  {selectedDateMode === 'manual' && (
-                      <input type="date" value={manualDate} onChange={e => setManualDate(e.target.value)} className={`w-full mt-2 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} border rounded-lg p-2 text-sm outline-none font-medium`} required />
-                  )}
-              </div>
-
-              {type !== 'ahorro' && (
-                <div>
-                  <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>
-                    {type === 'ingreso' ? 'Cuenta Bancaria (Destino)' : 'Medio de Pago / Tarjeta'}
-                  </label>
-                  <div className="relative">
-                    {type === 'ingreso' ? (
-                      <select 
-                        value={destBankId}
-                        onChange={(e) => setDestBankId(e.target.value)}
-                        className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} border rounded-xl p-3 outline-none font-bold appearance-none focus:border-blue-300 transition-colors text-sm`}
-                      >
-                        <option value="">Efectivo / Sin Cuenta vinculada</option>
-                        {bankAccounts.map(b => (
-                          <option key={b.id} value={b.id}>{b.bankName} - {b.accountType}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <select 
-                        value={methodId}
-                        onChange={(e) => setMethodId(Number(e.target.value))}
-                        className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} border rounded-xl p-3 outline-none font-bold appearance-none focus:border-blue-300 transition-colors text-sm`}
-                        required
-                      >
-                        {paymentMethods.length === 0 && <option value="" disabled>Sin métodos agregados</option>}
-                        {paymentMethods.map(m => (
-                          <option key={m.id} value={m.id}>{m.name}</option>
-                        ))}
-                      </select>
-                    )}
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <button 
-            type="submit" 
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg py-4 rounded-2xl shadow-lg shadow-blue-500/30 transition-all active:scale-95 mt-4"
-          >
-            Guardar Movimiento
-          </button>
-        </form>
-      </div>
-    );
-  };
 
   const HistoryAndHabitual = () => {
     const [filterPeriod, setFilterPeriod] = useState('todos');
@@ -3406,7 +3407,26 @@ function ExpenseTrackerApp() {
           {activeTab === 'profile' && <ProfileDashboard />}
           {activeTab === 'goals' && <SavingsAndGoals />}
           {activeTab === 'cards' && <CardsManager />}
-          {activeTab === 'add' && <AddTransaction />}
+          {activeTab === 'add' && (
+            <AddTransaction
+              categories={categories}
+              typesList={typesList}
+              paymentMethods={paymentMethods}
+              bankAccounts={bankAccounts}
+              settings={settings}
+              isDarkMode={isDarkMode}
+              transactions={transactions}
+              setTransactions={setTransactions}
+              setEmergencyFund={setEmergencyFund}
+              savingsGoals={savingsGoals}
+              setSavingsGoals={setSavingsGoals}
+              setActiveTab={setActiveTab}
+              handleSmartScan={handleSmartScan}
+              startVoiceDictation={startVoiceDictation}
+              isScanning={isScanning}
+              isListening={isListening}
+            />
+          )}
           {activeTab === 'history' && <HistoryAndHabitual />}
           {activeTab === 'settings' && <SettingsView />}
         </div>

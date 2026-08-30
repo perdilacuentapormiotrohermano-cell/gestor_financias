@@ -126,6 +126,25 @@ const LogOutIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
 );
 
+const DebouncedTextInput = ({ value, onCommit, type = 'text', placeholder, className }) => {
+  const [local, setLocal] = useState(value || '');
+
+  useEffect(() => {
+    setLocal(value || '');
+  }, [value]);
+
+  return (
+    <input
+      type={type}
+      placeholder={placeholder}
+      value={local}
+      onChange={e => setLocal(e.target.value)}
+      onBlur={() => { if (local !== value) onCommit(local); }}
+      className={className}
+    />
+  );
+};
+
 const AiChatInputForm = ({ isDarkMode, isLoading, onSend }) => {
   const [value, setValue] = useState('');
 
@@ -3149,13 +3168,13 @@ function ExpenseTrackerApp() {
         <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-5 shadow-sm border mb-6`}>
           <h3 className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-2">Asistente de IA (Gemini)</h3>
           <p className={`text-xs mb-3 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
-            Pegá tu clave gratuita de Gemini para usar el chat financiero y el autocompletado inteligente. Se guarda solo en este dispositivo. Conseguila en aistudio.google.com/apikey.
+            Pegá tu clave gratuita de Gemini para usar el chat financiero y el autocompletado inteligente. Se guarda solo en este dispositivo al tocar afuera del campo. Conseguila en aistudio.google.com/apikey.
           </p>
-          <input
+          <DebouncedTextInput
             type="password"
             placeholder="Clave de la API de Gemini"
             value={settings.geminiApiKey || ''}
-            onChange={(e) => setSettings({ ...settings, geminiApiKey: e.target.value })}
+            onCommit={(val) => setSettings({ ...settings, geminiApiKey: val })}
             className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-3 outline-none text-sm font-semibold`}
           />
         </div>

@@ -126,6 +126,30 @@ const LogOutIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
 );
 
+const AiChatInputForm = ({ isDarkMode, isLoading, onSend }) => {
+  const [value, setValue] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!value.trim() || isLoading) return;
+    onSend(value.trim());
+    setValue('');
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="flex gap-2">
+      <input
+        type="text"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        placeholder="Ej. ¿En qué categoría gasté más este mes?"
+        className={`flex-1 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-2.5 text-xs outline-none`}
+      />
+      <button type="submit" disabled={isLoading} className="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-md hover:bg-blue-700 transition-colors disabled:opacity-50">Preguntar</button>
+    </form>
+  );
+};
+
 function ExpenseTrackerApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [subTab, setSubTab] = useState('historial');
@@ -192,7 +216,6 @@ function ExpenseTrackerApp() {
   const [aiMessages, setAiMessages] = useState([
     { role: 'model', text: '¡Hola! Soy tu asesor financiero con inteligencia artificial (Gemini). ¿En qué puedo ayudarte hoy sobre tus gastos, presupuestos o metas de ahorro?' }
   ]);
-  const [aiInput, setAiInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
@@ -479,12 +502,10 @@ function ExpenseTrackerApp() {
   };
 
   // Gemini AI Assistant Handler
-  const handleSendAiMessage = async (e) => {
-    e.preventDefault();
-    if (!aiInput.trim() || aiLoading) return;
+  const handleSendAiMessage = async (userMsgRaw) => {
+    const userMsg = (userMsgRaw || '').trim();
+    if (!userMsg || aiLoading) return;
 
-    const userMsg = aiInput.trim();
-    setAiInput('');
     setAiMessages(prev => [...prev, { role: 'user', text: userMsg }]);
     setAiLoading(true);
 
@@ -510,7 +531,7 @@ function ExpenseTrackerApp() {
         setAiLoading(false);
         return;
       }
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
       const payload = {
         contents: [{ parts: [{ text: userPrompt }] }],
@@ -557,7 +578,7 @@ function ExpenseTrackerApp() {
         setIsScanning(false);
         return;
       }
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
       const payload = {
         contents: [{ parts: [{ text: promptText }] }],
         generationConfig: {
@@ -1190,16 +1211,7 @@ function ExpenseTrackerApp() {
               )}
             </div>
 
-            <form onSubmit={handleSendAiMessage} className="flex gap-2">
-              <input 
-                type="text"
-                value={aiInput}
-                onChange={e => setAiInput(e.target.value)}
-                placeholder="Ej. ¿En qué categoría gasté más este mes?"
-                className={`flex-1 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-2.5 text-xs outline-none`}
-              />
-              <button type="submit" disabled={aiLoading} className="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-md hover:bg-blue-700 transition-colors disabled:opacity-50">Preguntar</button>
-            </form>
+            <AiChatInputForm isDarkMode={isDarkMode} isLoading={aiLoading} onSend={handleSendAiMessage} />
           </div>
         )}
 

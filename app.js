@@ -325,7 +325,7 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
             </div>
             <button
               type="button"
-              onClick={() => { setSmartFeedback(null); startVoiceDictation(setSmartInputText, setDescription, setAmountInput, setCategoryId, setSmartFeedback); }}
+              onClick={() => { setSmartFeedback(null); startVoiceDictation(setSmartInputText, setDescription, setAmountInput, setCategoryId, setSmartFeedback, setMethodId, setSelectedDateMode); }}
               className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-white/20 hover:bg-white/30 text-white border border-white/20 backdrop-blur-sm'}`}
               title="Dictar por micrófono"
             >
@@ -343,7 +343,7 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
             <button 
               type="button"
               disabled={isScanning || !smartInputText}
-              onClick={() => { setSmartFeedback(null); handleSmartScan(smartInputText, setDescription, setAmountInput, setCategoryId, setSmartFeedback); }}
+              onClick={() => { setSmartFeedback(null); handleSmartScan(smartInputText, setDescription, setAmountInput, setCategoryId, setSmartFeedback, setMethodId, setSelectedDateMode); }}
               className="bg-white text-blue-600 font-bold px-3 py-2 rounded-xl text-xs shadow-sm hover:bg-blue-50 transition-colors disabled:opacity-50"
             >
               {isScanning ? 'Analizando...' : 'Auto-llenar'}
@@ -979,13 +979,13 @@ function ExpenseTrackerApp() {
   const [isScanning, setIsScanning] = useState(false);
   const [isListening, setIsListening] = useState(false);
 
-  const handleSmartScan = async (promptText, setDesc, setAmt, setCat, setFeedback) => {
+  const handleSmartScan = async (promptText, setDesc, setAmt, setCat, setFeedback, setMethod, setDateModeFn) => {
     const notify = setFeedback || (() => {});
     if (!promptText || isScanning) return;
     setIsScanning(true);
     notify({ type: 'info', text: 'Consultando a Gemini...' });
     try {
-      const systemPrompt = `Eres una IA de finanzas. Del mensaje del usuario, extraé: una descripción corta, el monto numérico (sin símbolos de moneda ni separadores de miles, usando punto decimal si hace falta) y la categoría más apropiada, elegida EXACTAMENTE de esta lista de IDs válidos: ${categories.map(c => c.id).join(', ')}. Respondé ÚNICAMENTE con un objeto JSON válido, sin texto adicional, sin explicaciones y sin bloques de código markdown, con exactamente esta forma: {"description": "...", "amount": 0, "category": "..."}`;
+      const systemPrompt = `Eres una IA de finanzas. Del mensaje del usuario, extraé: una descripción corta, el monto numérico (sin símbolos de moneda ni separadores de miles, usando punto decimal si hace falta), la categoría más apropiada (elegida EXACTAMENTE de esta lista de IDs válidos: ${categories.map(c => c.id).join(', ')}), el medio de pago si lo menciona (elegido EXACTAMENTE de esta lista de IDs válidos, o null si no se menciona ninguno: ${paymentMethods.map(m => `${m.id} (${m.name})`).join(', ')}), y cuándo ocurrió el gasto si lo menciona: "hoy" si dice hoy o no menciona nada, "ayer" si dice ayer, "hace2dias" si dice antes de ayer o hace dos días, o null si no queda claro. Respondé ÚNICAMENTE con un objeto JSON válido, sin texto adicional, sin explicaciones y sin bloques de código markdown, con exactamente esta forma: {"description": "...", "amount": 0, "category": "...", "method": "...", "when": "hoy"}`;
       const apiKey = settings.geminiApiKey || "";
       if (!apiKey) {
         notify({ type: 'error', text: 'Para usar el autocompletado con IA, cargá tu clave de Gemini en Ajustes → Asistente de IA (Gemini).' });
@@ -1020,6 +1020,8 @@ function ExpenseTrackerApp() {
           const desc = parsed.description ?? parsed.descripcion ?? parsed.desc;
           const amt = parsed.amount ?? parsed.monto ?? parsed.amount_number;
           const cat = parsed.category ?? parsed.categoria ?? parsed.category_id;
+          const method = parsed.method ?? parsed.metodo ?? parsed.payment_method;
+          const when = parsed.when ?? parsed.fecha ?? parsed.date;
 
           let appliedSomething = false;
           if (desc) { setDesc(String(desc)); appliedSomething = true; }
@@ -1030,6 +1032,13 @@ function ExpenseTrackerApp() {
           if (cat) {
             const matchedCat = categories.find(c => c.id === cat || c.name.toLowerCase() === String(cat).toLowerCase());
             if (matchedCat) { setCat(matchedCat.id); appliedSomething = true; }
+          }
+          if (method && method !== 'null' && setMethod) {
+            const matchedMethod = paymentMethods.find(m => String(m.id) === String(method) || m.name.toLowerCase() === String(method).toLowerCase());
+            if (matchedMethod) { setMethod(matchedMethod.id); appliedSomething = true; }
+          }
+          if (when && when !== 'null' && setDateModeFn) {
+            if (['hoy', 'ayer', 'hace2dias'].includes(when)) { setDateModeFn(when); appliedSomething = true; }
           }
 
           if (appliedSomething) {
@@ -1051,7 +1060,7 @@ function ExpenseTrackerApp() {
     }
   };
 
-  const startVoiceDictation = (setSmartText, setDesc, setAmt, setCat, setFeedback) => {
+  const startVoiceDictation = (setSmartText, setDesc, setAmt, setCat, setFeedback, setMethod, setDateModeFn) => {
     const notify = setFeedback || (() => {});
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {

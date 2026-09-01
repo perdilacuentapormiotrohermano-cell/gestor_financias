@@ -145,6 +145,105 @@ const DebouncedTextInput = ({ value, onCommit, type = 'text', placeholder, class
   );
 };
 
+const UsersIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+);
+
+const HouseholdPanel = ({ isDarkMode, householdId, householdCheckDone, onCreate, onJoin, onLeave }) => {
+  const [joinCode, setJoinCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [justCreatedCode, setJustCreatedCode] = useState('');
+
+  if (!householdCheckDone) return null;
+
+  if (householdId) {
+    return (
+      <div className={`mt-3 ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} border rounded-2xl p-4`}>
+        <div className="flex items-center gap-2 mb-2">
+          <UsersIcon />
+          <p className={`text-xs font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Grupo familiar activo</p>
+        </div>
+        <p className={`text-xs mb-3 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+          Estás viendo una billetera compartida. Código del grupo: <span className={`font-mono font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{householdId}</span> — compartilo para que alguien más se una.
+        </p>
+        {error && <p className="text-xs text-red-500 font-medium bg-red-500/10 border border-red-500/20 rounded-xl p-2 mb-2">{error}</p>}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true); setError('');
+            try { await onLeave(); } catch (e) { setError('No se pudo salir del grupo. Probá de nuevo.'); }
+            setBusy(false);
+          }}
+          className={`w-full ${isDarkMode ? 'bg-slate-900 text-slate-300 hover:bg-slate-800 border-slate-700' : 'bg-white text-gray-700 hover:bg-gray-100 border-gray-200'} border py-2.5 rounded-xl text-xs font-bold transition-colors`}
+        >
+          {busy ? 'Un momento...' : 'Salir del grupo familiar'}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`mt-3 ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} border rounded-2xl p-4`}>
+      <div className="flex items-center gap-2 mb-2">
+        <UsersIcon />
+        <p className={`text-xs font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Grupo familiar (billetera compartida)</p>
+      </div>
+      <p className={`text-xs mb-3 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+        Compartí tus datos en tiempo real con otra persona (por ejemplo, un hijo y su papá) usando cuentas distintas.
+      </p>
+
+      {justCreatedCode ? (
+        <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-3 mb-2">
+          <p className="text-xs text-green-500 font-semibold mb-1">¡Grupo creado! Compartí este código:</p>
+          <p className={`font-mono font-black text-lg ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{justCreatedCode}</p>
+        </div>
+      ) : (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true); setError('');
+            try {
+              const code = await onCreate();
+              setJustCreatedCode(code);
+            } catch (e) { setError('No se pudo crear el grupo. Probá de nuevo.'); }
+            setBusy(false);
+          }}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-md shadow-blue-500/20 transition-colors disabled:opacity-50 mb-2"
+        >
+          {busy ? 'Un momento...' : 'Crear grupo familiar'}
+        </button>
+      )}
+
+      {error && <p className="text-xs text-red-500 font-medium bg-red-500/10 border border-red-500/20 rounded-xl p-2 mb-2">{error}</p>}
+
+      <div className="flex gap-2">
+        <input
+          type="text"
+          placeholder="Código de invitación"
+          value={joinCode}
+          onChange={e => setJoinCode(e.target.value)}
+          className={`flex-1 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} border rounded-xl p-2.5 text-xs outline-none font-mono uppercase`}
+        />
+        <button
+          type="button"
+          disabled={busy || !joinCode.trim()}
+          onClick={async () => {
+            setBusy(true); setError('');
+            try { await onJoin(joinCode); setJoinCode(''); } catch (e) { setError('Ese código no es válido o el grupo no existe.'); }
+            setBusy(false);
+          }}
+          className={`${isDarkMode ? 'bg-slate-900 text-slate-200 hover:bg-slate-800 border-slate-700' : 'bg-white text-gray-800 hover:bg-gray-100 border-gray-200'} border px-4 py-2.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-50`}
+        >
+          Unirme
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const AiChatInputForm = ({ isDarkMode, isLoading, onSend }) => {
   const [value, setValue] = useState('');
 
@@ -565,6 +664,12 @@ function ExpenseTrackerApp() {
   const isRemoteUpdate = useRef(false);
   const hasLoadedCloudOnce = useRef(false);
 
+  // --- Grupo familiar (billetera compartida entre varias cuentas) ---
+  const [householdId, setHouseholdId] = useState(null);
+  const [householdCheckDone, setHouseholdCheckDone] = useState(false);
+  const householdIdRef = useRef(null);
+  useEffect(() => { householdIdRef.current = householdId; }, [householdId]);
+
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     setSystemTheme(mediaQuery.matches ? 'dark' : 'light');
@@ -735,11 +840,28 @@ function ExpenseTrackerApp() {
     }
   }, [transactions, paymentMethods, settings, categories, typesList, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, isLoaded]);
 
-  // Al iniciar sesión: escuchar cambios en la nube en tiempo real (Firestore)
+  // Detectar si esta cuenta pertenece a un grupo familiar (billetera compartida)
   useEffect(() => {
-    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) return;
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) {
+      setHouseholdId(null);
+      setHouseholdCheckDone(true);
+      return;
+    }
     const db = firebase.firestore();
-    const docRef = db.collection('users').doc(authUser.uid);
+    const unsubscribe = db.collection('users').doc(authUser.uid).onSnapshot((snap) => {
+      const data = snap.exists ? (snap.data() || {}) : {};
+      setHouseholdId(data.householdId || null);
+      setHouseholdCheckDone(true);
+    }, () => setHouseholdCheckDone(true));
+    return () => unsubscribe();
+  }, [authUser]);
+
+  // Al iniciar sesión (o al unirse/salir de un grupo familiar): escuchar cambios en la nube en tiempo real (Firestore)
+  useEffect(() => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !householdCheckDone) return;
+    const db = firebase.firestore();
+    const docRef = householdId ? db.collection('households').doc(householdId) : db.collection('users').doc(authUser.uid);
+    hasLoadedCloudOnce.current = false;
     setSyncStatus('syncing');
 
     const unsubscribe = docRef.onSnapshot((snap) => {
@@ -759,8 +881,8 @@ function ExpenseTrackerApp() {
         hasLoadedCloudOnce.current = true;
         setSyncStatus('synced');
         setTimeout(() => { isRemoteUpdate.current = false; }, 400);
-      } else {
-        // Primera vez que este usuario sincroniza: sube los datos que ya tenía en este dispositivo
+      } else if (!householdId) {
+        // Primera vez que este usuario sincroniza (modo personal): sube los datos que ya tenía en este dispositivo
         hasLoadedCloudOnce.current = true;
         docRef.set({
           transactions, paymentMethods, settings, categories, typesList,
@@ -772,7 +894,7 @@ function ExpenseTrackerApp() {
 
     return () => unsubscribe();
     // eslint-disable-next-line
-  }, [authUser]);
+  }, [authUser, householdId, householdCheckDone]);
 
   // Cuando cambian los datos localmente: subirlos a la nube (con una pequeña espera para no saturar)
   useEffect(() => {
@@ -781,14 +903,15 @@ function ExpenseTrackerApp() {
     const db = firebase.firestore();
     const timer = setTimeout(() => {
       setSyncStatus('syncing');
-      db.collection('users').doc(authUser.uid).set({
+      const docRef = householdId ? db.collection('households').doc(householdId) : db.collection('users').doc(authUser.uid);
+      docRef.set({
         transactions, paymentMethods, settings, categories, typesList,
         commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
         updatedAt: Date.now()
       }, { merge: true }).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
     }, 1200);
     return () => clearTimeout(timer);
-  }, [transactions, paymentMethods, settings, categories, typesList, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, authUser]);
+  }, [transactions, paymentMethods, settings, categories, typesList, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, authUser, householdId]);
 
   const formatAmountInput = (val) => {
     if (!val) return '';
@@ -895,9 +1018,58 @@ function ExpenseTrackerApp() {
       'auth/wrong-password': 'Contraseña incorrecta.',
       'auth/invalid-credential': 'Email o contraseña incorrectos.',
       'auth/too-many-requests': 'Demasiados intentos. Esperá un momento y probá de nuevo.',
-      'firebase-no-config': 'La sincronización todavía no está configurada en esta app (falta el archivo firebase-config.js).'
+      'firebase-no-config': 'La sincronización todavía no está configurada en esta app (falta el archivo firebase-config.js).',
+      'invalid-code': 'Ese código no es válido o el grupo no existe. Revisalo e intentá de nuevo.'
     };
     return map[code] || 'Ocurrió un error. Intentá de nuevo.';
+  };
+
+  // --- Grupo familiar (billetera compartida entre varias cuentas) ---
+  const handleCreateHousehold = async () => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) throw { code: 'firebase-no-config' };
+    const db = firebase.firestore();
+    const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+    await db.collection('households').doc(code).set({
+      members: [authUser.uid],
+      transactions, paymentMethods, settings, categories, typesList,
+      commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
+      updatedAt: Date.now()
+    });
+    await db.collection('users').doc(authUser.uid).set({ householdId: code }, { merge: true });
+    return code;
+  };
+
+  const handleJoinHousehold = async (codeInput) => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) throw { code: 'firebase-no-config' };
+    const db = firebase.firestore();
+    const code = (codeInput || '').trim().toUpperCase();
+    if (!code) throw { code: 'invalid-code' };
+    try {
+      await db.collection('households').doc(code).update({
+        members: firebase.firestore.FieldValue.arrayUnion(authUser.uid)
+      });
+    } catch (e) {
+      throw { code: 'invalid-code' };
+    }
+    await db.collection('users').doc(authUser.uid).set({ householdId: code }, { merge: true });
+  };
+
+  const handleLeaveHousehold = async () => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !householdId) return;
+    const db = firebase.firestore();
+    const leavingHouseholdId = householdId;
+    // Al salir, dejamos una copia de los datos compartidos como punto de partida de la cuenta personal
+    await db.collection('users').doc(authUser.uid).set({
+      householdId: firebase.firestore.FieldValue.delete(),
+      transactions, paymentMethods, settings, categories, typesList,
+      commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
+      updatedAt: Date.now()
+    }, { merge: true });
+    try {
+      await db.collection('households').doc(leavingHouseholdId).update({
+        members: firebase.firestore.FieldValue.arrayRemove(authUser.uid)
+      });
+    } catch (e) { /* si falla no pasa nada grave */ }
   };
 
   // Gemini AI Assistant Handler
@@ -3129,6 +3301,7 @@ function ExpenseTrackerApp() {
           ) : !authChecked ? (
             <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Comprobando sesión...</div>
           ) : authUser ? (
+            <>
             <div className={`${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} border rounded-2xl p-4 flex items-center justify-between gap-3`}>
               <div className="min-w-0">
                 <p className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'} truncate`}>{authUser.email}</p>
@@ -3144,6 +3317,15 @@ function ExpenseTrackerApp() {
                 <LogOutIcon /> Salir
               </button>
             </div>
+            <HouseholdPanel
+              isDarkMode={isDarkMode}
+              householdId={householdId}
+              householdCheckDone={householdCheckDone}
+              onCreate={handleCreateHousehold}
+              onJoin={handleJoinHousehold}
+              onLeave={handleLeaveHousehold}
+            />
+            </>
           ) : (
             <form onSubmit={handleAuthSubmit} className="space-y-3">
               <div className={`${isDarkMode ? 'bg-slate-800' : 'bg-gray-100'} p-1 rounded-xl flex w-full`}>

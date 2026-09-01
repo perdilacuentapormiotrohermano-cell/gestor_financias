@@ -14,6 +14,24 @@
 //        match /users/{userId} {
 //          allow read, write: if request.auth != null && request.auth.uid == userId;
 //        }
+//        match /households/{householdId} {
+//          allow create: if request.auth != null
+//            && request.resource.data.members is list
+//            && request.resource.data.members.size() == 1
+//            && request.resource.data.members[0] == request.auth.uid;
+//          allow read: if request.auth != null && request.auth.uid in resource.data.members;
+//          allow update: if request.auth != null && (
+//            request.auth.uid in resource.data.members
+//            ||
+//            (
+//              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
+//              request.resource.data.members.hasAll(resource.data.members) &&
+//              request.resource.data.members.size() == resource.data.members.size() + 1 &&
+//              request.auth.uid in request.resource.data.members
+//            )
+//          );
+//          allow delete: if false;
+//        }
 //      }
 //    }
 //

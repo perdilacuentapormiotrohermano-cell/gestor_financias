@@ -404,9 +404,9 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
         methodId: type === 'gasto' ? methodId : null,
         bankId: type === 'ingreso' ? (destBankId || null) : null,
         date: getDateToSave(),
-        scope: householdId ? scope : null,
-        createdBy: householdId ? (authUser?.uid || null) : null,
-        createdByEmail: householdId ? (authUser?.email || null) : null
+        scope: householdId ? scope : undefined,
+        createdBy: householdId ? (authUser?.uid || null) : undefined,
+        createdByEmail: householdId ? (authUser?.email || null) : undefined
       };
 
       setTransactions([newTransaction, ...transactions]);
@@ -2079,44 +2079,6 @@ function ExpenseTrackerApp() {
           </div>
         </div>
 
-    
-
-<div>
-          <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'} mb-4`}>
-            Viajes
-          </h3>
-
-          <div
-            onClick={() => setActiveTab('travel')}
-            className={`rounded-3xl p-5 shadow-sm border cursor-pointer hover:shadow-md transition-all active:scale-[0.98] ${
-              isDarkMode
-                ? 'bg-slate-900 border-amber-600/40 text-amber-100'
-                : 'bg-amber-50 border-amber-200 text-slate-900'
-            }`}
-          >
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center text-2xl">
-                  ✈️
-                </div>
-
-                <div>
-                  <p className="font-black text-lg">Modo Viaje</p>
-                  <p className="text-xs opacity-60 mt-0.5">
-                    Fondo, gastos, historial y participantes en tiempo real
-                  </p>
-                </div>
-              </div>
-
-              <span className="text-amber-600 font-black text-lg">→</span>
-            </div>
-          </div>
-        </div>
-
-
-
-              
-              
         <div>
           <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'} mb-4`}>Planificación Financiera</h3>
           <div 
@@ -3721,15 +3683,7 @@ function ExpenseTrackerApp() {
         <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar">
           {activeTab === 'dashboard' && <Dashboard />}
           {activeTab === 'profile' && <ProfileDashboard />}
-          {activeTab === 'travel' && (
-            <TravelMode
-              isDarkMode={isDarkMode}
-              authUser={authUser}
-              onBack={() => setActiveTab('dashboard')}
-            />
-          )}
           {activeTab === 'goals' && <SavingsAndGoals />}
-  
           {activeTab === 'cards' && <CardsManager />}
           {activeTab === 'add' && (
             <AddTransaction

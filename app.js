@@ -869,9 +869,7 @@ function ExpenseTrackerApp() {
     }
   }, [transactions, paymentMethods, settings, categories, typesList, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, isLoaded]);
 
-  // Escuchar tu documento personal (users/{uid}): acá viven SIEMPRE tus categorías, tipos,
-  // cuentas bancarias, medios de pago, ajustes, compromisos, cuotas, metas, fondo de emergencia
-  // y tus movimientos personales — pertenezcas o no a un grupo familiar, y sin importar a cuál.
+  // Detectar si esta cuenta pertenece a un grupo familiar (billetera compartida)
   useEffect(() => {
     if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) {
       setHouseholdId(null);
@@ -879,15 +877,32 @@ function ExpenseTrackerApp() {
       return;
     }
     const db = firebase.firestore();
-    const userDocRef = db.collection('users').doc(authUser.uid);
+    const unsubscribe = db.collection('users').doc(authUser.uid).onSnapshot((snap) => {
+      const data = snap.exists ? (snap.data() || {}) : {};
+      setHouseholdId(data.householdId || null);
+      setCloudPersonalTransactions(data.personalTransactions || []);
+      setHouseholdCheckDone(true);
+    }, () => setHouseholdCheckDone(true));
+    return () => unsubscribe();
+  }, [authUser]);
+
+  // Al iniciar sesión (o al unirse/salir de un grupo familiar): escuchar cambios en la nube en tiempo real (Firestore)
+  useEffect(() => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !householdCheckDone) return;
+    const db = firebase.firestore();
+    const docRef = householdId ? db.collection('households').doc(householdId) : db.collection('users').doc(authUser.uid);
     hasLoadedCloudOnce.current = false;
     setSyncStatus('syncing');
 
-    const unsubscribe = userDocRef.onSnapshot((snap) => {
+    const unsubscribe = docRef.onSnapshot((snap) => {
       if (snap.exists) {
         const data = snap.data() || {};
-        setHouseholdId(data.householdId || null);
         isRemoteUpdate.current = true;
+        if (householdId) {
+          setCloudSharedTransactions(data.transactions || []);
+        } else if (data.transactions) {
+          setTransactions(data.transactions);
+        }
         if (data.paymentMethods) setPaymentMethods(data.paymentMethods);
         if (data.settings) setSettings(data.settings);
         if (data.categories) setCategories(data.categories);
@@ -897,97 +912,63 @@ function ExpenseTrackerApp() {
         if (data.bankAccounts) setBankAccounts(data.bankAccounts);
         if (data.savingsGoals) setSavingsGoals(data.savingsGoals);
         if (data.emergencyFund) setEmergencyFund(data.emergencyFund);
-        // Compatibilidad con cuentas viejas: si todavía no existe "personalTransactions"
-        // y no estás en un grupo, tus movimientos históricos estaban guardados como "transactions".
-        setCloudPersonalTransactions(
-          data.personalTransactions !== undefined
-            ? data.personalTransactions
-            : (data.householdId ? [] : (data.transactions || []))
-        );
         hasLoadedCloudOnce.current = true;
         setSyncStatus('synced');
         setTimeout(() => { isRemoteUpdate.current = false; }, 400);
-      } else {
-        // Primera vez que este usuario sincroniza: sube los datos que ya tenía en este dispositivo
+      } else if (!householdId) {
+        // Primera vez que este usuario sincroniza (modo personal): sube los datos que ya tenía en este dispositivo
         hasLoadedCloudOnce.current = true;
-        userDocRef.set({
-          personalTransactions: transactions, paymentMethods, settings, categories, typesList,
+        docRef.set({
+          transactions, paymentMethods, settings, categories, typesList,
           commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
           updatedAt: Date.now()
         }).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
       }
-      setHouseholdCheckDone(true);
-    }, () => setHouseholdCheckDone(true));
-    return () => unsubscribe();
-  }, [authUser]);
+    }, () => setSyncStatus('error'));
 
-  // Solo mientras estás en un grupo familiar: escuchar el documento del grupo, que contiene
-  // ÚNICAMENTE los movimientos que alguien marcó como compartidos (nada de categorías, tipos,
-  // cuentas bancarias, ajustes, etc. — eso nunca sale de tu documento personal).
-  useEffect(() => {
-    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !householdCheckDone) return;
-    if (!householdId) {
-      setCloudSharedTransactions([]);
-      return;
-    }
-    const db = firebase.firestore();
-    const householdDocRef = db.collection('households').doc(householdId);
-    const unsubscribe = householdDocRef.onSnapshot((snap) => {
-      const data = snap.exists ? (snap.data() || {}) : {};
-      isRemoteUpdate.current = true;
-      setCloudSharedTransactions(data.transactions || []);
-      setTimeout(() => { isRemoteUpdate.current = false; }, 400);
-    }, () => {});
     return () => unsubscribe();
+    // eslint-disable-next-line
   }, [authUser, householdId, householdCheckDone]);
 
-  // Armar la lista de movimientos que se ve en la app: si estás en un grupo, tus movimientos
-  // personales + los compartidos del grupo; si no, solo los tuyos.
+  // Mientras estás en un grupo familiar: combinar los movimientos compartidos + los tuyos personales en una sola lista
   useEffect(() => {
-    if (!householdCheckDone) return;
+    if (!householdId) return;
+    const shared = (cloudSharedTransactions || []).map(t => ({ ...t, scope: t.scope || 'shared' }));
+    const personal = (cloudPersonalTransactions || []).map(t => ({ ...t, scope: 'personal' }));
     isRemoteUpdate.current = true;
-    if (householdId) {
-      const shared = (cloudSharedTransactions || []).map(t => ({ ...t, scope: t.scope || 'shared' }));
-      const personal = (cloudPersonalTransactions || []).map(t => ({ ...t, scope: 'personal' }));
-      setTransactions([...shared, ...personal]);
-    } else {
-      setTransactions(cloudPersonalTransactions || []);
-    }
+    setTransactions([...shared, ...personal]);
     setTimeout(() => { isRemoteUpdate.current = false; }, 50);
-  }, [householdCheckDone, householdId, cloudSharedTransactions, cloudPersonalTransactions]);
+  }, [householdId, cloudSharedTransactions, cloudPersonalTransactions]);
 
-  // Cuando cambian los datos localmente: subirlos a la nube (con una pequeña espera para no saturar).
-  // Categorías/tipos/cuentas/ajustes/compromisos/cuotas/metas/fondo van SIEMPRE a tu documento
-  // personal. Solo si estás en un grupo, además, los movimientos compartidos van al grupo.
+  // Cuando cambian los datos localmente: subirlos a la nube (con una pequeña espera para no saturar)
   useEffect(() => {
     if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !hasLoadedCloudOnce.current) return;
     if (isRemoteUpdate.current) return;
     const db = firebase.firestore();
-    const targetHouseholdId = householdId;
     const timer = setTimeout(() => {
       setSyncStatus('syncing');
-      const personalTx = targetHouseholdId ? transactions.filter(t => t.scope === 'personal') : transactions;
-      const writes = [
+      if (householdId) {
+        // Los movimientos "personales" van solo a tu cuenta; el resto (compartidos) va al grupo familiar
+        const sharedTx = transactions.filter(t => t.scope !== 'personal');
+        const personalTx = transactions.filter(t => t.scope === 'personal');
+        Promise.all([
+          db.collection('households').doc(householdId).set({
+            transactions: sharedTx, paymentMethods, settings, categories, typesList,
+            commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
+            updatedAt: Date.now()
+          }, { merge: true }),
+          db.collection('users').doc(authUser.uid).set({
+            personalTransactions: personalTx,
+            updatedAt: Date.now()
+          }, { merge: true })
+        ]).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
+      } else {
         db.collection('users').doc(authUser.uid).set({
-          personalTransactions: personalTx, paymentMethods, settings, categories, typesList,
+          transactions, paymentMethods, settings, categories, typesList,
           commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
           updatedAt: Date.now()
-        }, { merge: true })
-      ];
-      if (targetHouseholdId) {
-        // Si mientras esperábamos para guardar cambiaste de grupo (te uniste/saliste), no
-        // escribas los movimientos compartidos en el grupo equivocado.
-        if (householdIdRef.current === targetHouseholdId) {
-          const sharedTx = transactions.filter(t => t.scope !== 'personal');
-          writes.push(
-            db.collection('households').doc(targetHouseholdId).set({
-              transactions: sharedTx,
-              updatedAt: Date.now()
-            }, { merge: true })
-          );
-        }
+        }, { merge: true }).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
       }
-      Promise.all(writes).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
     }, 1200);
     return () => clearTimeout(timer);
   }, [transactions, paymentMethods, settings, categories, typesList, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, authUser, householdId]);
@@ -1108,12 +1089,10 @@ function ExpenseTrackerApp() {
     if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) throw { code: 'firebase-no-config' };
     const db = firebase.firestore();
     const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-    // El grupo familiar arranca vacío: tus categorías, tipos, cuentas bancarias, ajustes y
-    // movimientos actuales quedan en tu cuenta personal tal cual estaban. Solo vas a compartir
-    // lo que marques explícitamente como "compartido" a partir de ahora.
     await db.collection('households').doc(code).set({
       members: [authUser.uid],
-      transactions: [],
+      transactions, paymentMethods, settings, categories, typesList,
+      commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
       updatedAt: Date.now()
     });
     await db.collection('users').doc(authUser.uid).set({ householdId: code }, { merge: true });

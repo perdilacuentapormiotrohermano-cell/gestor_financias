@@ -1437,8 +1437,10 @@ function ExpenseTrackerApp() {
     const code = (codeInput || '').trim().toUpperCase();
     if (!code) throw { code: 'invalid-code' };
     const tripRef = db.collection('trips').doc(code);
-    const snap = await tripRef.get();
-    if (!snap.exists) throw { code: 'invalid-code' };
+    // No hacemos un get() previo: las reglas de Firestore solo dejan LEER el viaje a quien
+    // ya es miembro, así que alguien uniéndose por primera vez no tiene permiso para leerlo
+    // todavía (eso rompía el "unirme" con un falso "código inválido"). Vamos directo al
+    // update, que sí está permitido para que un no-miembro se agregue a sí mismo.
     try {
       await tripRef.update({
         members: firebase.firestore.FieldValue.arrayUnion(authUser.uid),

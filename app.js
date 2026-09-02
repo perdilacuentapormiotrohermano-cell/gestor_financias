@@ -268,8 +268,9 @@ const AiChatInputForm = ({ isDarkMode, isLoading, onSend }) => {
   );
 };
 
-const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, settings, isDarkMode, transactions, setTransactions, setEmergencyFund, savingsGoals, setSavingsGoals, setActiveTab, handleSmartScan, startVoiceDictation, isScanning, isListening }) => {
+const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, settings, isDarkMode, transactions, setTransactions, setEmergencyFund, savingsGoals, setSavingsGoals, setActiveTab, handleSmartScan, startVoiceDictation, isScanning, isListening, householdId, authUser }) => {
     const [type, setType] = useState('gasto');
+    const [scope, setScope] = useState('shared'); // 'shared' (grupo familiar) | 'personal' (solo yo)
     const [amountInput, setAmountInput] = useState('');
     const [description, setDescription] = useState('');
     const [smartInputText, setSmartInputText] = useState('');
@@ -402,7 +403,10 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
         typeClassification: type === 'ahorro' ? 'otro' : typeClassification,
         methodId: type === 'gasto' ? methodId : null,
         bankId: type === 'ingreso' ? (destBankId || null) : null,
-        date: getDateToSave()
+        date: getDateToSave(),
+        scope: householdId ? scope : undefined,
+        createdBy: householdId ? (authUser?.uid || null) : undefined,
+        createdByEmail: householdId ? (authUser?.email || null) : undefined
       };
 
       setTransactions([newTransaction, ...transactions]);
@@ -479,6 +483,28 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
               🎯 Ahorro
             </button>
           </div>
+
+          {householdId && (
+            <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-3 shadow-sm border flex items-center gap-2`}>
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} shrink-0`}>Visible para:</span>
+              <div className={`${isDarkMode ? 'bg-slate-800' : 'bg-gray-100'} p-1 rounded-xl flex flex-1`}>
+                <button
+                  type="button"
+                  onClick={() => setScope('shared')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${scope === 'shared' ? (isDarkMode ? 'bg-slate-700 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : (isDarkMode ? 'text-slate-400' : 'text-gray-500')}`}
+                >
+                  👨‍👩‍👧 Grupo familiar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScope('personal')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${scope === 'personal' ? (isDarkMode ? 'bg-slate-700 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : (isDarkMode ? 'text-slate-400' : 'text-gray-500')}`}
+                >
+                  🔒 Solo yo
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-6 shadow-sm border text-center`}>
             <div className="flex justify-between items-center mb-2">
@@ -669,6 +695,9 @@ function ExpenseTrackerApp() {
   const [householdCheckDone, setHouseholdCheckDone] = useState(false);
   const householdIdRef = useRef(null);
   useEffect(() => { householdIdRef.current = householdId; }, [householdId]);
+  // Movimientos marcados como "personales" (solo para mí) se guardan aparte de los "familiares" (compartidos)
+  const [cloudPersonalTransactions, setCloudPersonalTransactions] = useState([]);
+  const [cloudSharedTransactions, setCloudSharedTransactions] = useState([]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -851,6 +880,7 @@ function ExpenseTrackerApp() {
     const unsubscribe = db.collection('users').doc(authUser.uid).onSnapshot((snap) => {
       const data = snap.exists ? (snap.data() || {}) : {};
       setHouseholdId(data.householdId || null);
+      setCloudPersonalTransactions(data.personalTransactions || []);
       setHouseholdCheckDone(true);
     }, () => setHouseholdCheckDone(true));
     return () => unsubscribe();
@@ -868,7 +898,11 @@ function ExpenseTrackerApp() {
       if (snap.exists) {
         const data = snap.data() || {};
         isRemoteUpdate.current = true;
-        if (data.transactions) setTransactions(data.transactions);
+        if (householdId) {
+          setCloudSharedTransactions(data.transactions || []);
+        } else if (data.transactions) {
+          setTransactions(data.transactions);
+        }
         if (data.paymentMethods) setPaymentMethods(data.paymentMethods);
         if (data.settings) setSettings(data.settings);
         if (data.categories) setCategories(data.categories);
@@ -896,6 +930,16 @@ function ExpenseTrackerApp() {
     // eslint-disable-next-line
   }, [authUser, householdId, householdCheckDone]);
 
+  // Mientras estás en un grupo familiar: combinar los movimientos compartidos + los tuyos personales en una sola lista
+  useEffect(() => {
+    if (!householdId) return;
+    const shared = (cloudSharedTransactions || []).map(t => ({ ...t, scope: t.scope || 'shared' }));
+    const personal = (cloudPersonalTransactions || []).map(t => ({ ...t, scope: 'personal' }));
+    isRemoteUpdate.current = true;
+    setTransactions([...shared, ...personal]);
+    setTimeout(() => { isRemoteUpdate.current = false; }, 50);
+  }, [householdId, cloudSharedTransactions, cloudPersonalTransactions]);
+
   // Cuando cambian los datos localmente: subirlos a la nube (con una pequeña espera para no saturar)
   useEffect(() => {
     if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !hasLoadedCloudOnce.current) return;
@@ -903,12 +947,28 @@ function ExpenseTrackerApp() {
     const db = firebase.firestore();
     const timer = setTimeout(() => {
       setSyncStatus('syncing');
-      const docRef = householdId ? db.collection('households').doc(householdId) : db.collection('users').doc(authUser.uid);
-      docRef.set({
-        transactions, paymentMethods, settings, categories, typesList,
-        commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
-        updatedAt: Date.now()
-      }, { merge: true }).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
+      if (householdId) {
+        // Los movimientos "personales" van solo a tu cuenta; el resto (compartidos) va al grupo familiar
+        const sharedTx = transactions.filter(t => t.scope !== 'personal');
+        const personalTx = transactions.filter(t => t.scope === 'personal');
+        Promise.all([
+          db.collection('households').doc(householdId).set({
+            transactions: sharedTx, paymentMethods, settings, categories, typesList,
+            commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
+            updatedAt: Date.now()
+          }, { merge: true }),
+          db.collection('users').doc(authUser.uid).set({
+            personalTransactions: personalTx,
+            updatedAt: Date.now()
+          }, { merge: true })
+        ]).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
+      } else {
+        db.collection('users').doc(authUser.uid).set({
+          transactions, paymentMethods, settings, categories, typesList,
+          commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
+          updatedAt: Date.now()
+        }, { merge: true }).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
+      }
     }, 1200);
     return () => clearTimeout(timer);
   }, [transactions, paymentMethods, settings, categories, typesList, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, authUser, householdId]);
@@ -1058,12 +1118,10 @@ function ExpenseTrackerApp() {
     if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !householdId) return;
     const db = firebase.firestore();
     const leavingHouseholdId = householdId;
-    // Al salir, dejamos una copia de los datos compartidos como punto de partida de la cuenta personal
+    // Al salir, solo quitamos el puntero al grupo. Tus datos personales (que nunca se tocaron
+    // mientras estabas en el grupo) quedan intactos tal cual estaban antes de unirte.
     await db.collection('users').doc(authUser.uid).set({
-      householdId: firebase.firestore.FieldValue.delete(),
-      transactions, paymentMethods, settings, categories, typesList,
-      commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
-      updatedAt: Date.now()
+      householdId: firebase.firestore.FieldValue.delete()
     }, { merge: true });
     try {
       await db.collection('households').doc(leavingHouseholdId).update({
@@ -2256,12 +2314,20 @@ function ExpenseTrackerApp() {
 
     const filteredTransactions = useMemo(() => {
       return transactions.filter(t => {
+        if (householdId) {
+          if (subTab === 'compartidos') {
+            if (t.scope !== 'shared') return false;
+          } else {
+            // Historial normal: mis movimientos personales + los compartidos que yo cargué (no los de otros)
+            if (t.scope === 'shared' && t.createdBy !== authUser?.uid) return false;
+          }
+        }
         if (filterPeriod === 'mes' && !isTransactionInSelectedMonth(t.date)) return false;
         if (filterCategory !== 'todos' && t.category !== filterCategory) return false;
         if (filterType !== 'todos' && t.type !== filterType) return false;
         return true;
       });
-    }, [transactions, filterPeriod, filterCategory, filterType, selectedMonth]);
+    }, [transactions, filterPeriod, filterCategory, filterType, selectedMonth, householdId, subTab, authUser]);
 
     return (
       <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-left-4 duration-300`}>
@@ -2269,28 +2335,36 @@ function ExpenseTrackerApp() {
           <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Registros</h1>
         </div>
 
-        <div className={`${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-gray-200/70 text-gray-500'} p-1 rounded-2xl flex w-full mb-6`}>
+        <div className={`${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-gray-200/70 text-gray-500'} p-1 rounded-2xl flex w-full mb-6 overflow-x-auto no-scrollbar`}>
           <button 
             onClick={() => setSubTab('historial')}
-            className={`flex-1 py-2 text-[11px] font-bold rounded-xl transition-all ${subTab === 'historial' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
+            className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'historial' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
           >
             Historial
           </button>
+          {householdId && (
+            <button 
+              onClick={() => setSubTab('compartidos')}
+              className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'compartidos' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
+            >
+              👨‍👩‍👧 Compartidos
+            </button>
+          )}
           <button 
             onClick={() => setSubTab('habituales')}
-            className={`flex-1 py-2 text-[11px] font-bold rounded-xl transition-all ${subTab === 'habituales' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
+            className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'habituales' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
           >
             Pagos Habituales
           </button>
           <button 
             onClick={() => setSubTab('cuotas')}
-            className={`flex-1 py-2 text-[11px] font-bold rounded-xl transition-all ${subTab === 'cuotas' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
+            className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'cuotas' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
           >
             Seguimiento Cuotas
           </button>
         </div>
 
-        {subTab === 'historial' && (
+        {(subTab === 'historial' || subTab === 'compartidos') && (
           <div className="space-y-4">
             <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border space-y-3`}>
               <p className={`text-xs font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider`}>Filtros de Búsqueda</p>
@@ -2355,10 +2429,20 @@ function ExpenseTrackerApp() {
                             )}
                           </div>
                           {method && (
-                            <div className="mt-1.5 flex items-center gap-1">
+                            <div className="mt-1.5 flex items-center gap-1 flex-wrap">
                               <span className={`text-[10px] ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-gray-100 text-gray-600 border-gray-200'} px-2 py-0.5 rounded-md font-semibold tracking-wide shadow-sm border`}>
                                 {method.name}
                               </span>
+                              {subTab === 'compartidos' && t.createdByEmail && (
+                                <span className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-md font-semibold">
+                                  {t.createdBy === authUser?.uid ? 'Vos' : t.createdByEmail.split('@')[0]}
+                                </span>
+                              )}
+                              {subTab === 'historial' && householdId && t.scope === 'personal' && (
+                                <span className="text-[10px] bg-slate-500/10 text-slate-400 border border-slate-500/20 px-2 py-0.5 rounded-md font-semibold">
+                                  🔒 Solo yo
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>
@@ -3619,6 +3703,8 @@ function ExpenseTrackerApp() {
               startVoiceDictation={startVoiceDictation}
               isScanning={isScanning}
               isListening={isListening}
+              householdId={householdId}
+              authUser={authUser}
             />
           )}
           {activeTab === 'history' && <HistoryAndHabitual />}

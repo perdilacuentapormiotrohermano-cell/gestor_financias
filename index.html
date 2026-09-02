@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Gestor de Finanzas</title>
-  <link rel="manifest" href="manifest.json?v=28">
+  <link rel="manifest" href="manifest.json?v=29">
   <meta name="theme-color" content="#007AFF">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -20,7 +20,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-  <script src="firebase-config.js?v=28"></script>
+  <script src="firebase-config.js?v=29"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     html,body{margin:0;padding:0;background:#e5e7eb;overscroll-behavior:none;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -47,7 +47,7 @@
   <script>
     window.addEventListener('error',function(e){var box=document.getElementById('error-box');if(box){box.style.display='block';box.textContent='Error: '+e.message+'\n'+(e.filename?(e.filename+':'+e.lineno):'');}});
   </script>
-  <script type="text/babel" data-presets="react" src="app.js?v=28"></script>
+  <script type="text/babel" data-presets="react" src="app.js?v=29"></script>
   <script>
     if ('serviceWorker' in navigator) {
       var refreshing = false;
@@ -57,7 +57,7 @@
         window.location.reload();
       });
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('sw.js?v=28', { updateViaCache: 'none' }).then(function (reg) {
+        navigator.serviceWorker.register('sw.js?v=29', { updateViaCache: 'none' }).then(function (reg) {
           return reg.update();
         }).catch(function () {});
       });

@@ -177,7 +177,7 @@ const AiChatInputForm = ({ isDarkMode, isLoading, onSend }) => {
   );
 };
 
-const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, settings, isDarkMode, transactions, setTransactions, setEmergencyFund, savingsGoals, setSavingsGoals, setActiveTab, handleSmartScan, startVoiceDictation, isScanning, isListening }) => {
+const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, settings, isDarkMode, transactions, setTransactions, setEmergencyFund, savingsGoals, setSavingsGoals, setActiveTab, handleSmartScan, startVoiceDictation, isScanning, isListening, authUser, trips, onAddTripTransaction }) => {
     const [type, setType] = useState('gasto');
     const [amountInput, setAmountInput] = useState('');
     const [description, setDescription] = useState('');
@@ -190,6 +190,31 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
     const [methodId, setMethodId] = useState(paymentMethods.length > 0 ? paymentMethods[0].id : '');
     const [destBankId, setDestBankId] = useState('');
     const [targetGoalId, setTargetGoalId] = useState('emergency');
+
+    const availableTrips = trips || [];
+    const [imputeTrip, setImputeTrip] = useState(false);
+    const [selectedTripId, setSelectedTripId] = useState(availableTrips[0]?.id || '');
+    const selectedTrip = availableTrips.find(t => t.id === selectedTripId) || null;
+    const tripCategoriesList = (selectedTrip && selectedTrip.categories) || [];
+    const [tripCategoryId, setTripCategoryId] = useState(tripCategoriesList[0]?.id || '');
+
+    useEffect(() => {
+      if (availableTrips.length > 0 && !availableTrips.some(t => t.id === selectedTripId)) {
+        setSelectedTripId(availableTrips[0].id);
+      }
+      if (availableTrips.length === 0 && imputeTrip) {
+        setImputeTrip(false);
+      }
+      // eslint-disable-next-line
+    }, [trips]);
+
+    useEffect(() => {
+      const cats = (selectedTrip && selectedTrip.categories) || [];
+      if (!cats.some(c => c.id === tripCategoryId)) {
+        setTripCategoryId(cats[0]?.id || '');
+      }
+      // eslint-disable-next-line
+    }, [selectedTripId, selectedTrip]);
     
     const [selectedDateMode, setSelectedDateMode] = useState('hoy');
     const [manualDate, setManualDate] = useState(() => {
@@ -299,6 +324,9 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
         }
       }
 
+      const shouldImputeTrip = imputeTrip && selectedTrip && type !== 'ahorro';
+      const finalCategoryId = type === 'ahorro' ? 'ahorro' : (shouldImputeTrip ? tripCategoryId : categoryId);
+
       const newTransaction = {
         id: Date.now(),
         type,
@@ -307,14 +335,26 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
         originalCurrency: txCurrency,
         exchangeRate: rate,
         description: type === 'ahorro' ? (targetGoalId === 'emergency' ? 'Aporte Fondo de Emergencia' : `Aporte Meta: ${savingsGoals.find(g => g.id === targetGoalId)?.name || ''}`) : description,
-        category: type === 'ahorro' ? 'ahorro' : categoryId,
+        category: finalCategoryId,
         typeClassification: type === 'ahorro' ? 'otro' : typeClassification,
         methodId: type === 'gasto' ? methodId : null,
         bankId: type === 'ingreso' ? (destBankId || null) : null,
-        date: getDateToSave()
+        date: getDateToSave(),
+        tripId: shouldImputeTrip ? selectedTrip.id : null
       };
 
       setTransactions([newTransaction, ...transactions]);
+
+      if (shouldImputeTrip && onAddTripTransaction) {
+        onAddTripTransaction(selectedTrip.id, {
+          type: type === 'ingreso' ? 'aporte' : 'gasto',
+          amount: finalAmount,
+          description: description.trim() || (tripCategoriesList.find(c => c.id === tripCategoryId)?.name || 'Movimiento'),
+          category: tripCategoryId,
+          date: newTransaction.date
+        }).catch(() => {});
+      }
+
       setActiveTab('dashboard');
     };
 
@@ -437,6 +477,58 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
             )}
           </div>
 
+          {authUser && availableTrips.length > 0 && type !== 'ahorro' && (
+            <div className={`rounded-2xl p-3.5 border transition-colors ${imputeTrip ? 'bg-amber-500/10 border-amber-500/30' : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100')}`}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-lg shrink-0">✈️</span>
+                  <div className="min-w-0">
+                    <p className={`text-xs font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Imputar al Viaje</p>
+                    {imputeTrip && selectedTrip ? (
+                      <p className="text-[11px] font-semibold text-amber-500 truncate">{selectedTrip.name}</p>
+                    ) : (
+                      <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} truncate`}>Sumalo al historial compartido de un viaje</p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setImputeTrip(!imputeTrip)}
+                  className={`shrink-0 w-11 h-6 rounded-full transition-colors relative ${imputeTrip ? 'bg-amber-500' : (isDarkMode ? 'bg-slate-700' : 'bg-gray-300')}`}
+                  aria-label="Imputar al viaje"
+                >
+                  <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-all ${imputeTrip ? 'left-5' : 'left-0.5'}`}></span>
+                </button>
+              </div>
+              {imputeTrip && (
+                <div className="mt-3 pt-3 border-t border-amber-500/20 space-y-2">
+                  {availableTrips.length > 1 && (
+                    <select
+                      value={selectedTripId}
+                      onChange={(e) => setSelectedTripId(e.target.value)}
+                      className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-2.5 text-xs font-bold outline-none`}
+                    >
+                      {availableTrips.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  )}
+                  {tripCategoriesList.length > 0 && (
+                    <select
+                      value={tripCategoryId}
+                      onChange={(e) => setTripCategoryId(e.target.value)}
+                      className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-2.5 text-xs font-bold uppercase outline-none`}
+                    >
+                      {tripCategoriesList.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="space-y-4">
             <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border space-y-4`}>
               {type === 'ahorro' ? (
@@ -455,14 +547,17 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
                 </div>
               ) : (
                 <>
-                  <input 
-                    type="text" 
-                    placeholder="Descripción (ej. Supermercado, Sueldo)" 
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} border rounded-xl p-3 outline-none focus:border-blue-300 transition-colors text-sm font-medium`}
-                    required
-                  />
+                  <div>
+                    <label className={`block text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-1`}>Descripción</label>
+                    <input 
+                      type="text" 
+                      placeholder="Agregá un detalle breve sobre este movimiento..." 
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} border rounded-xl p-3 outline-none focus:border-blue-300 transition-colors text-sm font-medium`}
+                      required
+                    />
+                  </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -507,40 +602,62 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
                   )}
               </div>
 
-              {type !== 'ahorro' && (
+              {type === 'ingreso' && (
                 <div>
                   <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>
-                    {type === 'ingreso' ? 'Cuenta Bancaria (Destino)' : 'Medio de Pago / Tarjeta'}
+                    Cuenta Bancaria (Destino)
                   </label>
                   <div className="relative">
-                    {type === 'ingreso' ? (
-                      <select 
-                        value={destBankId}
-                        onChange={(e) => setDestBankId(e.target.value)}
-                        className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} border rounded-xl p-3 outline-none font-bold appearance-none focus:border-blue-300 transition-colors text-sm`}
-                      >
-                        <option value="">Efectivo / Sin Cuenta vinculada</option>
-                        {bankAccounts.map(b => (
-                          <option key={b.id} value={b.id}>{b.bankName} - {b.accountType}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <select 
-                        value={methodId}
-                        onChange={(e) => setMethodId(Number(e.target.value))}
-                        className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} border rounded-xl p-3 outline-none font-bold appearance-none focus:border-blue-300 transition-colors text-sm`}
-                        required
-                      >
-                        {paymentMethods.length === 0 && <option value="" disabled>Sin métodos agregados</option>}
-                        {paymentMethods.map(m => (
-                          <option key={m.id} value={m.id}>{m.name}</option>
-                        ))}
-                      </select>
-                    )}
+                    <select 
+                      value={destBankId}
+                      onChange={(e) => setDestBankId(e.target.value)}
+                      className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} border rounded-xl p-3 outline-none font-bold appearance-none focus:border-blue-300 transition-colors text-sm`}
+                    >
+                      <option value="">Efectivo / Sin Cuenta vinculada</option>
+                      {bankAccounts.map(b => (
+                        <option key={b.id} value={b.id}>{b.bankName} - {b.accountType}</option>
+                      ))}
+                    </select>
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                     </div>
                   </div>
+                </div>
+              )}
+              {type === 'gasto' && (
+                <div>
+                  <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>
+                    Medio de Pago
+                  </label>
+                  {paymentMethods.length === 0 ? (
+                    <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Todavía no agregaste ningún medio de pago.</p>
+                  ) : (
+                    <div className="flex gap-2.5 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1">
+                      {paymentMethods.map(m => {
+                        const isSelected = methodId === m.id;
+                        const shortLabel = { credit: 'Crédito', debit: 'Débito', cash: 'Efectivo', wallet: 'Billetera' }[m.type] || 'Medio';
+                        return (
+                          <button
+                            type="button"
+                            key={m.id}
+                            onClick={() => setMethodId(m.id)}
+                            className={`relative shrink-0 w-36 h-[88px] rounded-2xl p-3 text-left bg-gradient-to-br ${m.color || 'from-gray-500 to-gray-700'} text-white shadow-md transition-all ${isSelected ? 'ring-2 ring-white/90 scale-[1.03]' : 'opacity-70'}`}
+                          >
+                            <div className="flex justify-between items-start">
+                              <span className="text-[9px] font-black uppercase tracking-wider opacity-90">{shortLabel}</span>
+                              {isSelected && (
+                                <span className="w-4 h-4 rounded-full bg-white/90 text-emerald-600 flex items-center justify-center text-[10px] font-black">✓</span>
+                              )}
+                            </div>
+                            <p className="text-xs font-bold leading-tight mt-4 line-clamp-2">{m.name}</p>
+                            {m.limit ? (
+                              <p className="text-[9px] opacity-80 mt-0.5">Límite {new Intl.NumberFormat('es-AR', { notation: 'compact' }).format(m.limit)}</p>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -650,7 +767,7 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
       setTxBusy(true);
       try {
         await onAddTripTransaction(trip.id, {
-          type: txType === 'aporte' ? 'ingreso' : 'gasto',
+          type: txType === 'aporte' ? 'aporte' : 'gasto',
           amount: amt,
           description: txDescription.trim() || (txType === 'aporte' ? 'Aporte al fondo' : (tripCategories.find(c => c.id === txCategoryId)?.name || 'Gasto')),
           category: txCategoryId || (tripCategories[0]?.id || 'otros'),
@@ -4080,6 +4197,9 @@ function ExpenseTrackerApp() {
               startVoiceDictation={startVoiceDictation}
               isScanning={isScanning}
               isListening={isListening}
+              authUser={authUser}
+              trips={trips}
+              onAddTripTransaction={handleAddTripTransaction}
             />
           )}
           {activeTab === 'history' && <HistoryAndHabitual />}

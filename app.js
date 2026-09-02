@@ -149,100 +149,9 @@ const UsersIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
 );
 
-const HouseholdPanel = ({ isDarkMode, householdId, householdCheckDone, onCreate, onJoin, onLeave }) => {
-  const [joinCode, setJoinCode] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [justCreatedCode, setJustCreatedCode] = useState('');
-
-  if (!householdCheckDone) return null;
-
-  if (householdId) {
-    return (
-      <div className={`mt-3 ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} border rounded-2xl p-4`}>
-        <div className="flex items-center gap-2 mb-2">
-          <UsersIcon />
-          <p className={`text-xs font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Grupo familiar activo</p>
-        </div>
-        <p className={`text-xs mb-3 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
-          Estás viendo una billetera compartida. Código del grupo: <span className={`font-mono font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{householdId}</span> — compartilo para que alguien más se una.
-        </p>
-        {error && <p className="text-xs text-red-500 font-medium bg-red-500/10 border border-red-500/20 rounded-xl p-2 mb-2">{error}</p>}
-        <button
-          type="button"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true); setError('');
-            try { await onLeave(); } catch (e) { setError('No se pudo salir del grupo. Probá de nuevo.'); }
-            setBusy(false);
-          }}
-          className={`w-full ${isDarkMode ? 'bg-slate-900 text-slate-300 hover:bg-slate-800 border-slate-700' : 'bg-white text-gray-700 hover:bg-gray-100 border-gray-200'} border py-2.5 rounded-xl text-xs font-bold transition-colors`}
-        >
-          {busy ? 'Un momento...' : 'Salir del grupo familiar'}
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className={`mt-3 ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} border rounded-2xl p-4`}>
-      <div className="flex items-center gap-2 mb-2">
-        <UsersIcon />
-        <p className={`text-xs font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Grupo familiar (billetera compartida)</p>
-      </div>
-      <p className={`text-xs mb-3 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
-        Compartí tus datos en tiempo real con otra persona (por ejemplo, un hijo y su papá) usando cuentas distintas.
-      </p>
-
-      {justCreatedCode ? (
-        <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-3 mb-2">
-          <p className="text-xs text-green-500 font-semibold mb-1">¡Grupo creado! Compartí este código:</p>
-          <p className={`font-mono font-black text-lg ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{justCreatedCode}</p>
-        </div>
-      ) : (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true); setError('');
-            try {
-              const code = await onCreate();
-              setJustCreatedCode(code);
-            } catch (e) { setError('No se pudo crear el grupo. Probá de nuevo.'); }
-            setBusy(false);
-          }}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-md shadow-blue-500/20 transition-colors disabled:opacity-50 mb-2"
-        >
-          {busy ? 'Un momento...' : 'Crear grupo familiar'}
-        </button>
-      )}
-
-      {error && <p className="text-xs text-red-500 font-medium bg-red-500/10 border border-red-500/20 rounded-xl p-2 mb-2">{error}</p>}
-
-      <div className="flex gap-2">
-        <input
-          type="text"
-          placeholder="Código de invitación"
-          value={joinCode}
-          onChange={e => setJoinCode(e.target.value)}
-          className={`flex-1 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} border rounded-xl p-2.5 text-xs outline-none font-mono uppercase`}
-        />
-        <button
-          type="button"
-          disabled={busy || !joinCode.trim()}
-          onClick={async () => {
-            setBusy(true); setError('');
-            try { await onJoin(joinCode); setJoinCode(''); } catch (e) { setError('Ese código no es válido o el grupo no existe.'); }
-            setBusy(false);
-          }}
-          className={`${isDarkMode ? 'bg-slate-900 text-slate-200 hover:bg-slate-800 border-slate-700' : 'bg-white text-gray-800 hover:bg-gray-100 border-gray-200'} border px-4 py-2.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-50`}
-        >
-          Unirme
-        </button>
-      </div>
-    </div>
-  );
-};
+const PlaneIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.5 1c-.2.4-.1.9.3 1.2l5 3.5-3 3-2.5-.5c-.4-.1-.8.1-1 .5l-.5 1c-.2.4 0 .9.4 1.1l4.5 2.5 2.5 4.5c.3.4.8.6 1.1.4l1-.5c.4-.2.6-.6.5-1l-.5-2.5 3-3 3.5 5c.3.4.8.5 1.2.3l1-.5c.4-.2.6-.7.4-1.1Z"></path></svg>
+);
 
 const AiChatInputForm = ({ isDarkMode, isLoading, onSend }) => {
   const [value, setValue] = useState('');
@@ -268,9 +177,8 @@ const AiChatInputForm = ({ isDarkMode, isLoading, onSend }) => {
   );
 };
 
-const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, settings, isDarkMode, transactions, setTransactions, setEmergencyFund, savingsGoals, setSavingsGoals, setActiveTab, handleSmartScan, startVoiceDictation, isScanning, isListening, householdId, authUser }) => {
+const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, settings, isDarkMode, transactions, setTransactions, setEmergencyFund, savingsGoals, setSavingsGoals, setActiveTab, handleSmartScan, startVoiceDictation, isScanning, isListening }) => {
     const [type, setType] = useState('gasto');
-    const [scope, setScope] = useState('shared'); // 'shared' (grupo familiar) | 'personal' (solo yo)
     const [amountInput, setAmountInput] = useState('');
     const [description, setDescription] = useState('');
     const [smartInputText, setSmartInputText] = useState('');
@@ -403,10 +311,7 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
         typeClassification: type === 'ahorro' ? 'otro' : typeClassification,
         methodId: type === 'gasto' ? methodId : null,
         bankId: type === 'ingreso' ? (destBankId || null) : null,
-        date: getDateToSave(),
-        scope: householdId ? scope : undefined,
-        createdBy: householdId ? (authUser?.uid || null) : undefined,
-        createdByEmail: householdId ? (authUser?.email || null) : undefined
+        date: getDateToSave()
       };
 
       setTransactions([newTransaction, ...transactions]);
@@ -483,28 +388,6 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
               🎯 Ahorro
             </button>
           </div>
-
-          {householdId && (
-            <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-3 shadow-sm border flex items-center gap-2`}>
-              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} shrink-0`}>Visible para:</span>
-              <div className={`${isDarkMode ? 'bg-slate-800' : 'bg-gray-100'} p-1 rounded-xl flex flex-1`}>
-                <button
-                  type="button"
-                  onClick={() => setScope('shared')}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${scope === 'shared' ? (isDarkMode ? 'bg-slate-700 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : (isDarkMode ? 'text-slate-400' : 'text-gray-500')}`}
-                >
-                  👨‍👩‍👧 Grupo familiar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setScope('personal')}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${scope === 'personal' ? (isDarkMode ? 'bg-slate-700 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : (isDarkMode ? 'text-slate-400' : 'text-gray-500')}`}
-                >
-                  🔒 Solo yo
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-6 shadow-sm border text-center`}>
             <div className="flex justify-between items-center mb-2">
@@ -674,6 +557,437 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
     );
   };
 
+const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setActiveTab, onCreateTrip, onJoinTrip, onLeaveTrip, onDeleteTrip, onAddTripTransaction, onDeleteTripTransaction, onUpdateTrip }) => {
+  const [mode, setMode] = useState('list'); // 'list' | 'create' | 'detail'
+  const [viewingTripId, setViewingTripId] = useState(null);
+
+  const [tripName, setTripName] = useState('');
+  const [tripStart, setTripStart] = useState('');
+  const [tripEnd, setTripEnd] = useState('');
+  const [tripBudgetInput, setTripBudgetInput] = useState('');
+  const [tripCatsDraft, setTripCatsDraft] = useState('Alojamiento, Comida, Transporte, Excursiones');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+
+  const [joinCode, setJoinCode] = useState('');
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState('');
+
+  const [txType, setTxType] = useState('gasto'); // 'gasto' | 'aporte'
+  const [txAmountInput, setTxAmountInput] = useState('');
+  const [txDescription, setTxDescription] = useState('');
+  const [txCategoryId, setTxCategoryId] = useState('');
+  const [txBusy, setTxBusy] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState('');
+
+  const parseAmt = (str) => {
+    if (!str) return 0;
+    const clean = String(str).replace(/\./g, '').replace(',', '.');
+    return parseFloat(clean) || 0;
+  };
+
+  const formatAmtInput = (val) => {
+    if (!val) return '';
+    let clean = val.replace(/[^0-9,]/g, '');
+    const parts = clean.split(',');
+    if (parts.length > 2) return val;
+    let integerPart = parts[0];
+    let decimalPart = parts[1] !== undefined ? ',' + parts[1].substring(0, 2) : '';
+    if (integerPart) integerPart = parseInt(integerPart, 10).toLocaleString('es-AR');
+    return integerPart + decimalPart;
+  };
+
+  const formatMoney = (amount) => {
+    const numericAmount = parseFloat(amount) || 0;
+    const formatted = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numericAmount);
+    const symbols = { 'ARS': '$', 'USD': 'US$', 'EUR': '€' };
+    return `${symbols[settings.currency] || '$'} ${formatted}`;
+  };
+
+  const cardCls = isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100';
+  const inputCls = isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800';
+  const labelCls = isDarkMode ? 'text-slate-400' : 'text-gray-500';
+
+  if (!authUser) {
+    return (
+      <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in duration-300`}>
+        <h1 className={`text-2xl font-bold mb-4 mt-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>✈️ Modo Viaje</h1>
+        <div className={`${cardCls} rounded-3xl p-6 shadow-sm border text-center`}>
+          <p className={`text-sm ${labelCls} mb-4`}>Para crear o unirte a un viaje compartido necesitás iniciar sesión primero (así podés invitar a otras personas con sus propias cuentas).</p>
+          <button onClick={() => setActiveTab('settings')} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl text-sm shadow-md transition-colors">
+            Ir a Ajustes → Cuenta
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const trip = viewingTripId ? trips.find(t => t.id === viewingTripId) : null;
+
+  // ---- Vista Detalle de un viaje ----
+  if (mode === 'detail' && trip) {
+    const tripTxs = (trip.transactions || []).slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+    const totalSpent = tripTxs.filter(t => t.type === 'gasto').reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+    const totalAportado = tripTxs.filter(t => t.type === 'aporte').reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+    const disponible = totalAportado - totalSpent;
+    const budget = parseFloat(trip.budget || 0);
+    const usagePercent = budget > 0 ? Math.min((totalSpent / budget) * 100, 100) : 0;
+    const tripCategories = trip.categories || [];
+    const isOwner = trip.ownerUid === authUser.uid;
+
+    const memberTotals = (trip.members || []).map(uid => {
+      const email = (trip.memberEmails && trip.memberEmails[uid]) || '';
+      const aportado = tripTxs.filter(t => t.type === 'aporte' && t.createdBy === uid).reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+      const gastado = tripTxs.filter(t => t.type === 'gasto' && t.createdBy === uid).reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+      return { uid, email, aportado, gastado };
+    });
+
+    const handleSubmitTx = async (e) => {
+      e.preventDefault();
+      const amt = parseAmt(txAmountInput);
+      if (amt <= 0) return;
+      setTxBusy(true);
+      try {
+        await onAddTripTransaction(trip.id, {
+          type: txType === 'aporte' ? 'ingreso' : 'gasto',
+          amount: amt,
+          description: txDescription.trim() || (txType === 'aporte' ? 'Aporte al fondo' : (tripCategories.find(c => c.id === txCategoryId)?.name || 'Gasto')),
+          category: txCategoryId || (tripCategories[0]?.id || 'otros'),
+          date: new Date().toISOString()
+        });
+        setTxAmountInput('');
+        setTxDescription('');
+      } catch (err) { /* noop */ }
+      setTxBusy(false);
+    };
+
+    const handleCopyCode = () => {
+      const text = trip.id;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          setCopyFeedback('¡Copiado!');
+          setTimeout(() => setCopyFeedback(''), 1500);
+        }).catch(() => setCopyFeedback(text));
+      } else {
+        setCopyFeedback(text);
+      }
+    };
+
+    return (
+      <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-right-4 duration-300`}>
+        <div className="flex items-center gap-3 mb-4 mt-2">
+          <button onClick={() => { setMode('list'); setViewingTripId(null); }} className={`${isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-gray-100 text-gray-800'} p-2 rounded-full shadow-sm`}>
+            <ArrowLeftIcon />
+          </button>
+          <h1 className={`text-xl font-bold truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{trip.name}</h1>
+        </div>
+
+        <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-3xl p-6 text-white shadow-lg mb-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 rounded-full bg-white opacity-10"></div>
+          <div className="flex items-center gap-2 mb-1">
+            <PlaneIcon />
+            <span className="text-xs font-black tracking-widest uppercase bg-black/20 px-2.5 py-0.5 rounded-full">Modo Viaje</span>
+          </div>
+          {(trip.startDate || trip.endDate) && (
+            <p className="text-xs font-bold opacity-90 mt-1">{trip.startDate || '?'} al {trip.endDate || '?'}</p>
+          )}
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            <div>
+              <p className="text-orange-100 text-xs">💰 Fondo disponible</p>
+              <p className="text-2xl font-bold">{formatMoney(disponible)}</p>
+            </div>
+            <div>
+              <p className="text-orange-100 text-xs">🎯 Presupuesto</p>
+              <p className="text-2xl font-bold">{formatMoney(budget)}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 mt-3 pt-3 border-t border-white/20">
+            <div>
+              <p className="text-orange-100 text-xs">💸 Total gastado</p>
+              <p className="font-bold">{formatMoney(totalSpent)}</p>
+            </div>
+            <div>
+              <p className="text-orange-100 text-xs">📊 % utilizado</p>
+              <p className="font-bold">{usagePercent.toFixed(0)}%</p>
+            </div>
+          </div>
+          {budget > 0 && (
+            <div className="w-full bg-black/20 h-2 rounded-full overflow-hidden mt-3">
+              <div className={`h-full rounded-full ${usagePercent >= 90 ? 'bg-red-400' : 'bg-white'}`} style={{ width: `${usagePercent}%` }}></div>
+            </div>
+          )}
+        </div>
+
+        <div className={`${cardCls} rounded-2xl p-4 shadow-sm border mb-6`}>
+          <div className="flex items-center gap-2 mb-2">
+            <UsersIcon />
+            <p className={`text-xs font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Participantes del viaje</p>
+          </div>
+          <p className={`text-xs mb-3 ${labelCls}`}>Invitá gente compartiendo este código. Cualquiera con una cuenta se puede sumar y cargar gastos.</p>
+          <div className="flex items-center gap-2 mb-3">
+            <span className={`font-mono font-black text-lg flex-1 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{trip.id}</span>
+            <button type="button" onClick={handleCopyCode} className={`${isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-gray-100 text-gray-800'} px-3 py-1.5 rounded-lg text-xs font-bold`}>
+              {copyFeedback || 'Copiar'}
+            </button>
+          </div>
+          <div className="space-y-2">
+            {memberTotals.map(m => (
+              <div key={m.uid} className={`flex justify-between items-center text-xs p-2 rounded-lg ${isDarkMode ? 'bg-slate-800/60' : 'bg-gray-50'}`}>
+                <span className={`font-semibold truncate ${isDarkMode ? 'text-slate-200' : 'text-gray-700'}`}>
+                  {m.uid === authUser.uid ? 'Vos' : (m.email ? m.email.split('@')[0] : 'Miembro')}
+                </span>
+                <span className="text-right">
+                  <span className="text-green-500 font-bold">{formatMoney(m.aportado)}</span>
+                  <span className={labelCls}> aportado</span>
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button
+              type="button"
+              disabled={leaving}
+              onClick={async () => { setLeaving(true); await onLeaveTrip(trip.id); setLeaving(false); setMode('list'); setViewingTripId(null); }}
+              className={`flex-1 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-gray-100 text-gray-700'} py-2 rounded-xl text-xs font-bold`}
+            >
+              {leaving ? 'Un momento...' : 'Salir del viaje'}
+            </button>
+            {isOwner && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (window.confirm('¿Borrar este viaje para todos los participantes? Esta acción no se puede deshacer.')) {
+                    await onDeleteTrip(trip.id);
+                    setMode('list'); setViewingTripId(null);
+                  }
+                }}
+                className="flex-1 bg-red-500/10 text-red-500 border border-red-500/20 py-2 rounded-xl text-xs font-bold"
+              >
+                Borrar viaje
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className={`${cardCls} rounded-2xl p-4 shadow-sm border mb-6`}>
+          <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${labelCls}`}>Cargar movimiento del viaje</p>
+          <form onSubmit={handleSubmitTx} className="space-y-3">
+            <div className={`${isDarkMode ? 'bg-slate-800' : 'bg-gray-100'} p-1 rounded-xl flex w-full`}>
+              <button type="button" onClick={() => setTxType('gasto')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${txType === 'gasto' ? (isDarkMode ? 'bg-slate-700 text-white' : 'bg-white text-gray-900 shadow-sm') : labelCls}`}>💸 Gasto</button>
+              <button type="button" onClick={() => setTxType('aporte')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${txType === 'aporte' ? (isDarkMode ? 'bg-slate-700 text-white' : 'bg-white text-gray-900 shadow-sm') : labelCls}`}>💰 Aporte al fondo</button>
+            </div>
+            <input
+              type="text"
+              value={txAmountInput}
+              onChange={e => setTxAmountInput(formatAmtInput(e.target.value))}
+              placeholder="Monto (ej. 15.000)"
+              inputMode="decimal"
+              className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm font-bold`}
+              required
+            />
+            <input
+              type="text"
+              value={txDescription}
+              onChange={e => setTxDescription(e.target.value)}
+              placeholder={txType === 'aporte' ? 'Descripción (opcional)' : 'Descripción (ej. Cena, Hotel)'}
+              className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm`}
+            />
+            {txType === 'gasto' && (
+              <select
+                value={txCategoryId || (tripCategories[0]?.id || '')}
+                onChange={e => setTxCategoryId(e.target.value)}
+                className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm capitalize`}
+              >
+                {tripCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            )}
+            <button type="submit" disabled={txBusy} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl text-sm shadow-md transition-colors disabled:opacity-50">
+              {txBusy ? 'Guardando...' : 'Guardar'}
+            </button>
+          </form>
+        </div>
+
+        <div>
+          <h3 className={`text-sm font-bold uppercase tracking-wider mb-3 ${labelCls}`}>Historial del viaje</h3>
+          <div className="space-y-2">
+            {tripTxs.length === 0 ? (
+              <div className={`text-center ${labelCls} ${cardCls} text-sm p-6 rounded-2xl border`}>Todavía no hay movimientos en este viaje.</div>
+            ) : (
+              tripTxs.map(t => {
+                const cat = tripCategories.find(c => c.id === t.category);
+                return (
+                  <div key={t.id} className={`${cardCls} rounded-2xl p-3.5 shadow-sm border flex justify-between items-center gap-2`}>
+                    <div className="min-w-0 flex-1">
+                      <p className={`font-semibold text-sm truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.description}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <span className={`text-[11px] ${labelCls}`}>{new Date(t.date).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}</span>
+                        {t.type === 'gasto' && cat && <><span className={`w-1 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span><span className={`text-[11px] ${labelCls}`}>{cat.name}</span></>}
+                        <span className={`w-1 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
+                        <span className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded-md font-semibold">
+                          {t.createdBy === authUser.uid ? 'Vos' : (t.createdByEmail ? t.createdByEmail.split('@')[0] : 'Miembro')}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`font-bold text-sm ${t.type === 'aporte' ? 'text-green-500' : 'text-red-500'}`}>
+                        {t.type === 'aporte' ? '+' : '-'}{formatMoney(t.amount)}
+                      </span>
+                      {(t.createdBy === authUser.uid || isOwner) && (
+                        <button onClick={() => onDeleteTripTransaction(trip.id, t)} className="text-gray-400 hover:text-red-500 transition-colors">
+                          <TrashIcon />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Vista Crear Viaje ----
+  if (mode === 'create') {
+    const handleSubmitCreate = async (e) => {
+      e.preventDefault();
+      if (!tripName.trim()) return;
+      setCreating(true); setCreateError('');
+      try {
+        const cats = tripCatsDraft.split(',').map(s => s.trim()).filter(Boolean).map((name, i) => ({ id: `tc_${i}_${Date.now()}`, name }));
+        const code = await onCreateTrip({ name: tripName, startDate: tripStart, endDate: tripEnd, budget: parseAmt(tripBudgetInput), categories: cats });
+        setTripName(''); setTripStart(''); setTripEnd(''); setTripBudgetInput(''); setTripCatsDraft('Alojamiento, Comida, Transporte, Excursiones');
+        setViewingTripId(code);
+        setMode('detail');
+      } catch (err) {
+        setCreateError('No se pudo crear el viaje. Probá de nuevo.');
+      }
+      setCreating(false);
+    };
+
+    return (
+      <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-right-4 duration-300`}>
+        <div className="flex items-center gap-3 mb-6 mt-2">
+          <button onClick={() => setMode('list')} className={`${isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-gray-100 text-gray-800'} p-2 rounded-full shadow-sm`}>
+            <ArrowLeftIcon />
+          </button>
+          <h1 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Nuevo Viaje</h1>
+        </div>
+        <form onSubmit={handleSubmitCreate} className={`${cardCls} rounded-3xl p-5 shadow-sm border space-y-4`}>
+          <div>
+            <label className={`block text-[10px] font-bold uppercase mb-1 ${labelCls}`}>Nombre del viaje</label>
+            <input type="text" value={tripName} onChange={e => setTripName(e.target.value)} placeholder="Ej. Viaje a Brasil" className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm font-bold`} required />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={`block text-[10px] font-bold uppercase mb-1 ${labelCls}`}>Fecha inicio</label>
+              <input type="date" value={tripStart} onChange={e => setTripStart(e.target.value)} className={`w-full ${inputCls} border rounded-xl p-2.5 outline-none text-sm`} />
+            </div>
+            <div>
+              <label className={`block text-[10px] font-bold uppercase mb-1 ${labelCls}`}>Fecha fin</label>
+              <input type="date" value={tripEnd} onChange={e => setTripEnd(e.target.value)} className={`w-full ${inputCls} border rounded-xl p-2.5 outline-none text-sm`} />
+            </div>
+          </div>
+          <div>
+            <label className={`block text-[10px] font-bold uppercase mb-1 ${labelCls}`}>Presupuesto objetivo</label>
+            <input type="text" inputMode="decimal" value={tripBudgetInput} onChange={e => setTripBudgetInput(formatAmtInput(e.target.value))} placeholder="Ej. 2.500.000" className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm font-bold`} />
+          </div>
+          <div>
+            <label className={`block text-[10px] font-bold uppercase mb-1 ${labelCls}`}>Categorías del viaje (separadas por coma)</label>
+            <input type="text" value={tripCatsDraft} onChange={e => setTripCatsDraft(e.target.value)} className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm`} />
+          </div>
+          {createError && <p className="text-xs text-red-500 font-medium bg-red-500/10 border border-red-500/20 rounded-xl p-2">{createError}</p>}
+          <button type="submit" disabled={creating} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-xl text-sm shadow-md transition-colors disabled:opacity-50">
+            {creating ? 'Creando...' : 'Crear viaje'}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  // ---- Vista Lista de Viajes ----
+  return (
+    <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-right-4 duration-300`}>
+      <div className="flex justify-between items-center mb-2 mt-2">
+        <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>✈️ Modo Viaje</h1>
+        <button onClick={() => setMode('create')} className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md transition-colors">
+          + Crear Viaje
+        </button>
+      </div>
+      <p className={`text-xs mb-5 ${labelCls}`}>Fondo, presupuesto e historial exclusivos por viaje. Invitá a otras cuentas para cargar gastos juntos.</p>
+
+      <div className="space-y-3 mb-6">
+        {!tripsCheckDone ? (
+          <div className={`text-center ${labelCls} ${cardCls} text-sm p-6 rounded-2xl border`}>Cargando viajes...</div>
+        ) : trips.length === 0 ? (
+          <div className={`text-center ${labelCls} ${cardCls} text-sm p-8 rounded-3xl border`}>Todavía no creaste ni te uniste a ningún viaje.</div>
+        ) : (
+          trips.map(t => {
+            const txs = t.transactions || [];
+            const spent = txs.filter(tx => tx.type === 'gasto').reduce((s, tx) => s + parseFloat(tx.amount || 0), 0);
+            const budget = parseFloat(t.budget || 0);
+            const pct = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
+            return (
+              <div key={t.id} onClick={() => { setViewingTripId(t.id); setMode('detail'); }} className={`${isDarkMode ? 'bg-slate-900 border-amber-600/30' : 'bg-white border-amber-200'} rounded-3xl p-5 shadow-sm border space-y-2 cursor-pointer hover:shadow-md transition-all active:scale-[0.99]`}>
+                <div className="flex justify-between items-start">
+                  <div className="min-w-0">
+                    <h3 className={`text-base font-bold truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.name}</h3>
+                    {(t.startDate || t.endDate) && <p className={`text-xs mt-0.5 ${labelCls}`}>📅 {t.startDate || '?'} al {t.endDate || '?'}</p>}
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-gray-100 text-gray-600'}`}>
+                    {(t.members || []).length} {(t.members || []).length === 1 ? 'persona' : 'personas'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs font-semibold">
+                  <span className={labelCls}>Gastado: <span className={isDarkMode ? 'text-white' : 'text-gray-800'}>{formatMoney(spent)}</span></span>
+                  {budget > 0 && <span className={labelCls}>{pct.toFixed(0)}%</span>}
+                </div>
+                {budget > 0 && (
+                  <div className={`w-full ${isDarkMode ? 'bg-slate-800' : 'bg-gray-100'} h-2 rounded-full overflow-hidden`}>
+                    <div className={`h-full rounded-full ${pct >= 90 ? 'bg-red-500' : 'bg-amber-500'}`} style={{ width: `${pct}%` }}></div>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className={`${cardCls} rounded-2xl p-4 shadow-sm border`}>
+        <p className={`text-xs font-bold uppercase tracking-wider mb-2 ${labelCls}`}>¿Te invitaron a un viaje?</p>
+        <form onSubmit={async (e) => {
+          e.preventDefault();
+          if (!joinCode.trim()) return;
+          setJoining(true); setJoinError('');
+          try {
+            const code = await onJoinTrip(joinCode);
+            setJoinCode('');
+            setViewingTripId(code);
+            setMode('detail');
+          } catch (err) {
+            setJoinError('Ese código no es válido o el viaje no existe.');
+          }
+          setJoining(false);
+        }} className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Código de invitación"
+            value={joinCode}
+            onChange={e => setJoinCode(e.target.value)}
+            className={`flex-1 ${inputCls} border rounded-xl p-2.5 text-xs outline-none font-mono uppercase`}
+          />
+          <button type="submit" disabled={joining || !joinCode.trim()} className={`${isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-gray-100 text-gray-800'} px-4 py-2.5 rounded-xl text-xs font-bold disabled:opacity-50`}>
+            Unirme
+          </button>
+        </form>
+        {joinError && <p className="text-xs text-red-500 font-medium mt-2">{joinError}</p>}
+      </div>
+    </div>
+  );
+};
+
 function ExpenseTrackerApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [subTab, setSubTab] = useState('historial');
@@ -690,14 +1004,11 @@ function ExpenseTrackerApp() {
   const isRemoteUpdate = useRef(false);
   const hasLoadedCloudOnce = useRef(false);
 
-  // --- Grupo familiar (billetera compartida entre varias cuentas) ---
-  const [householdId, setHouseholdId] = useState(null);
-  const [householdCheckDone, setHouseholdCheckDone] = useState(false);
-  const householdIdRef = useRef(null);
-  useEffect(() => { householdIdRef.current = householdId; }, [householdId]);
-  // Movimientos marcados como "personales" (solo para mí) se guardan aparte de los "familiares" (compartidos)
-  const [cloudPersonalTransactions, setCloudPersonalTransactions] = useState([]);
-  const [cloudSharedTransactions, setCloudSharedTransactions] = useState([]);
+  // --- Modo Viaje (fondos compartidos por viaje, invitando a otras cuentas) ---
+  const [tripIds, setTripIds] = useState([]); // viajes de los que soy miembro (propios o a los que me uní)
+  const [tripsCheckDone, setTripsCheckDone] = useState(false);
+  const [trips, setTrips] = useState([]); // documentos completos de cada viaje (metadata + transacciones del viaje)
+  const tripUnsubscribersRef = useRef({});
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -869,28 +1180,65 @@ function ExpenseTrackerApp() {
     }
   }, [transactions, paymentMethods, settings, categories, typesList, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, isLoaded]);
 
-  // Detectar si esta cuenta pertenece a un grupo familiar (billetera compartida)
+  // Detectar en qué viajes soy miembro (para suscribirme a cada uno)
   useEffect(() => {
     if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) {
-      setHouseholdId(null);
-      setHouseholdCheckDone(true);
+      setTripIds([]);
+      setTripsCheckDone(true);
       return;
     }
     const db = firebase.firestore();
     const unsubscribe = db.collection('users').doc(authUser.uid).onSnapshot((snap) => {
       const data = snap.exists ? (snap.data() || {}) : {};
-      setHouseholdId(data.householdId || null);
-      setCloudPersonalTransactions(data.personalTransactions || []);
-      setHouseholdCheckDone(true);
-    }, () => setHouseholdCheckDone(true));
+      setTripIds(data.tripIds || []);
+      setTripsCheckDone(true);
+    }, () => setTripsCheckDone(true));
     return () => unsubscribe();
   }, [authUser]);
 
-  // Al iniciar sesión (o al unirse/salir de un grupo familiar): escuchar cambios en la nube en tiempo real (Firestore)
+  // Suscribirse en tiempo real a cada viaje del que soy miembro (se pueden tener varios a la vez)
   useEffect(() => {
-    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !householdCheckDone) return;
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !tripsCheckDone) return;
     const db = firebase.firestore();
-    const docRef = householdId ? db.collection('households').doc(householdId) : db.collection('users').doc(authUser.uid);
+    const current = tripUnsubscribersRef.current;
+
+    // Dar de baja los viajes de los que ya no soy miembro
+    Object.keys(current).forEach(id => {
+      if (!tripIds.includes(id)) {
+        current[id]();
+        delete current[id];
+        setTrips(prev => prev.filter(t => t.id !== id));
+      }
+    });
+
+    // Suscribirse a los viajes nuevos
+    tripIds.forEach(id => {
+      if (current[id]) return;
+      current[id] = db.collection('trips').doc(id).onSnapshot((snap) => {
+        if (!snap.exists) {
+          setTrips(prev => prev.filter(t => t.id !== id));
+          return;
+        }
+        const data = snap.data() || {};
+        setTrips(prev => {
+          const withoutThis = prev.filter(t => t.id !== id);
+          return [...withoutThis, { id, ...data }];
+        });
+      });
+    });
+  }, [authUser, tripIds, tripsCheckDone]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(tripUnsubscribersRef.current).forEach(unsub => unsub());
+    };
+  }, []);
+
+  // Al iniciar sesión: escuchar cambios en la nube en tiempo real (Firestore) para mis datos personales
+  useEffect(() => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) return;
+    const db = firebase.firestore();
+    const docRef = db.collection('users').doc(authUser.uid);
     hasLoadedCloudOnce.current = false;
     setSyncStatus('syncing');
 
@@ -898,11 +1246,7 @@ function ExpenseTrackerApp() {
       if (snap.exists) {
         const data = snap.data() || {};
         isRemoteUpdate.current = true;
-        if (householdId) {
-          setCloudSharedTransactions(data.transactions || []);
-        } else if (data.transactions) {
-          setTransactions(data.transactions);
-        }
+        if (data.transactions) setTransactions(data.transactions);
         if (data.paymentMethods) setPaymentMethods(data.paymentMethods);
         if (data.settings) setSettings(data.settings);
         if (data.categories) setCategories(data.categories);
@@ -915,8 +1259,8 @@ function ExpenseTrackerApp() {
         hasLoadedCloudOnce.current = true;
         setSyncStatus('synced');
         setTimeout(() => { isRemoteUpdate.current = false; }, 400);
-      } else if (!householdId) {
-        // Primera vez que este usuario sincroniza (modo personal): sube los datos que ya tenía en este dispositivo
+      } else {
+        // Primera vez que este usuario sincroniza: sube los datos que ya tenía en este dispositivo
         hasLoadedCloudOnce.current = true;
         docRef.set({
           transactions, paymentMethods, settings, categories, typesList,
@@ -928,17 +1272,7 @@ function ExpenseTrackerApp() {
 
     return () => unsubscribe();
     // eslint-disable-next-line
-  }, [authUser, householdId, householdCheckDone]);
-
-  // Mientras estás en un grupo familiar: combinar los movimientos compartidos + los tuyos personales en una sola lista
-  useEffect(() => {
-    if (!householdId) return;
-    const shared = (cloudSharedTransactions || []).map(t => ({ ...t, scope: t.scope || 'shared' }));
-    const personal = (cloudPersonalTransactions || []).map(t => ({ ...t, scope: 'personal' }));
-    isRemoteUpdate.current = true;
-    setTransactions([...shared, ...personal]);
-    setTimeout(() => { isRemoteUpdate.current = false; }, 50);
-  }, [householdId, cloudSharedTransactions, cloudPersonalTransactions]);
+  }, [authUser]);
 
   // Cuando cambian los datos localmente: subirlos a la nube (con una pequeña espera para no saturar)
   useEffect(() => {
@@ -947,31 +1281,14 @@ function ExpenseTrackerApp() {
     const db = firebase.firestore();
     const timer = setTimeout(() => {
       setSyncStatus('syncing');
-      if (householdId) {
-        // Los movimientos "personales" van solo a tu cuenta; el resto (compartidos) va al grupo familiar
-        const sharedTx = transactions.filter(t => t.scope !== 'personal');
-        const personalTx = transactions.filter(t => t.scope === 'personal');
-        Promise.all([
-          db.collection('households').doc(householdId).set({
-            transactions: sharedTx, paymentMethods, settings, categories, typesList,
-            commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
-            updatedAt: Date.now()
-          }, { merge: true }),
-          db.collection('users').doc(authUser.uid).set({
-            personalTransactions: personalTx,
-            updatedAt: Date.now()
-          }, { merge: true })
-        ]).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
-      } else {
-        db.collection('users').doc(authUser.uid).set({
-          transactions, paymentMethods, settings, categories, typesList,
-          commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
-          updatedAt: Date.now()
-        }, { merge: true }).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
-      }
+      db.collection('users').doc(authUser.uid).set({
+        transactions, paymentMethods, settings, categories, typesList,
+        commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
+        updatedAt: Date.now()
+      }, { merge: true }).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
     }, 1200);
     return () => clearTimeout(timer);
-  }, [transactions, paymentMethods, settings, categories, typesList, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, authUser, householdId]);
+  }, [transactions, paymentMethods, settings, categories, typesList, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, authUser]);
 
   const formatAmountInput = (val) => {
     if (!val) return '';
@@ -1079,55 +1396,127 @@ function ExpenseTrackerApp() {
       'auth/invalid-credential': 'Email o contraseña incorrectos.',
       'auth/too-many-requests': 'Demasiados intentos. Esperá un momento y probá de nuevo.',
       'firebase-no-config': 'La sincronización todavía no está configurada en esta app (falta el archivo firebase-config.js).',
-      'invalid-code': 'Ese código no es válido o el grupo no existe. Revisalo e intentá de nuevo.'
+      'invalid-code': 'Ese código no es válido o el viaje no existe. Revisalo e intentá de nuevo.'
     };
     return map[code] || 'Ocurrió un error. Intentá de nuevo.';
   };
 
-  // --- Grupo familiar (billetera compartida entre varias cuentas) ---
-  const handleCreateHousehold = async () => {
+  // --- Modo Viaje (fondo + gastos compartidos por viaje, con invitación a otras cuentas) ---
+  const handleCreateTrip = async ({ name, startDate, endDate, budget, categories: tripCategories }) => {
     if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) throw { code: 'firebase-no-config' };
     const db = firebase.firestore();
-    const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-    await db.collection('households').doc(code).set({
+    const code = `${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-2)}`.toUpperCase();
+    await db.collection('trips').doc(code).set({
+      name: (name || 'Mi Viaje').trim(),
+      startDate: startDate || null,
+      endDate: endDate || null,
+      budget: parseFloat(budget) || 0,
+      categories: tripCategories && tripCategories.length > 0 ? tripCategories : [
+        { id: 'alojamiento', name: 'Alojamiento' },
+        { id: 'comida', name: 'Comida' },
+        { id: 'transporte', name: 'Transporte' },
+        { id: 'excursiones', name: 'Excursiones' },
+        { id: 'otros', name: 'Otros' }
+      ],
+      ownerUid: authUser.uid,
       members: [authUser.uid],
-      transactions, paymentMethods, settings, categories, typesList,
-      commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
+      memberEmails: { [authUser.uid]: authUser.email || '' },
+      transactions: [],
+      createdAt: Date.now(),
       updatedAt: Date.now()
     });
-    await db.collection('users').doc(authUser.uid).set({ householdId: code }, { merge: true });
+    await db.collection('users').doc(authUser.uid).set({
+      tripIds: firebase.firestore.FieldValue.arrayUnion(code)
+    }, { merge: true });
     return code;
   };
 
-  const handleJoinHousehold = async (codeInput) => {
+  const handleJoinTrip = async (codeInput) => {
     if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) throw { code: 'firebase-no-config' };
     const db = firebase.firestore();
     const code = (codeInput || '').trim().toUpperCase();
     if (!code) throw { code: 'invalid-code' };
+    const tripRef = db.collection('trips').doc(code);
+    const snap = await tripRef.get();
+    if (!snap.exists) throw { code: 'invalid-code' };
     try {
-      await db.collection('households').doc(code).update({
-        members: firebase.firestore.FieldValue.arrayUnion(authUser.uid)
+      await tripRef.update({
+        members: firebase.firestore.FieldValue.arrayUnion(authUser.uid),
+        [`memberEmails.${authUser.uid}`]: authUser.email || '',
+        updatedAt: Date.now()
       });
     } catch (e) {
       throw { code: 'invalid-code' };
     }
-    await db.collection('users').doc(authUser.uid).set({ householdId: code }, { merge: true });
+    await db.collection('users').doc(authUser.uid).set({
+      tripIds: firebase.firestore.FieldValue.arrayUnion(code)
+    }, { merge: true });
+    return code;
   };
 
-  const handleLeaveHousehold = async () => {
-    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !householdId) return;
+  const handleLeaveTrip = async (tripId) => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !tripId) return;
     const db = firebase.firestore();
-    const leavingHouseholdId = householdId;
-    // Al salir, solo quitamos el puntero al grupo. Tus datos personales (que nunca se tocaron
-    // mientras estabas en el grupo) quedan intactos tal cual estaban antes de unirte.
     await db.collection('users').doc(authUser.uid).set({
-      householdId: firebase.firestore.FieldValue.delete()
+      tripIds: firebase.firestore.FieldValue.arrayRemove(tripId)
     }, { merge: true });
     try {
-      await db.collection('households').doc(leavingHouseholdId).update({
-        members: firebase.firestore.FieldValue.arrayRemove(authUser.uid)
+      await db.collection('trips').doc(tripId).update({
+        members: firebase.firestore.FieldValue.arrayRemove(authUser.uid),
+        updatedAt: Date.now()
       });
     } catch (e) { /* si falla no pasa nada grave */ }
+  };
+
+  const handleDeleteTrip = async (tripId) => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !tripId) return;
+    const db = firebase.firestore();
+    const trip = trips.find(t => t.id === tripId);
+    // Sacamos del viaje a todos los miembros (les borramos el puntero) y borramos el documento del viaje
+    const members = (trip && trip.members) || [authUser.uid];
+    await Promise.all(members.map(uid =>
+      db.collection('users').doc(uid).set({
+        tripIds: firebase.firestore.FieldValue.arrayRemove(tripId)
+      }, { merge: true }).catch(() => {})
+    ));
+    await db.collection('trips').doc(tripId).delete();
+  };
+
+  const handleAddTripTransaction = async (tripId, tx) => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !tripId) throw { code: 'firebase-no-config' };
+    const db = firebase.firestore();
+    const newTx = {
+      id: `triptx_${Date.now()}`,
+      type: tx.type,
+      amount: parseFloat(tx.amount) || 0,
+      description: tx.description || '',
+      category: tx.category || 'otros',
+      date: tx.date || new Date().toISOString(),
+      createdBy: authUser.uid,
+      createdByEmail: authUser.email || ''
+    };
+    await db.collection('trips').doc(tripId).update({
+      transactions: firebase.firestore.FieldValue.arrayUnion(newTx),
+      updatedAt: Date.now()
+    });
+  };
+
+  const handleDeleteTripTransaction = async (tripId, txToDelete) => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !tripId) return;
+    const db = firebase.firestore();
+    const trip = trips.find(t => t.id === tripId);
+    if (!trip) return;
+    const remaining = (trip.transactions || []).filter(t => t.id !== txToDelete.id);
+    await db.collection('trips').doc(tripId).update({
+      transactions: remaining,
+      updatedAt: Date.now()
+    });
+  };
+
+  const handleUpdateTrip = async (tripId, updates) => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !tripId) return;
+    const db = firebase.firestore();
+    await db.collection('trips').doc(tripId).set({ ...updates, updatedAt: Date.now() }, { merge: true });
   };
 
   // Gemini AI Assistant Handler
@@ -2098,6 +2487,26 @@ function ExpenseTrackerApp() {
               <ArrowUpIcon />
             </div>
           </div>
+
+          <div 
+            onClick={() => setActiveTab('trips')}
+            className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-3xl p-5 shadow-sm text-white flex items-center justify-between cursor-pointer hover:shadow-md transition-all active:scale-[0.98] mt-3"
+          >
+            <div className="flex items-center gap-4">
+              <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-sm">
+                <PlaneIcon />
+              </div>
+              <div>
+                <p className="font-bold text-lg mb-0.5">Modo Viaje</p>
+                <p className="text-orange-100 text-xs font-medium">
+                  {trips.length > 0 ? `${trips.length} ${trips.length === 1 ? 'viaje activo' : 'viajes activos'}` : 'Fondo, gastos e invitados por viaje'}
+                </p>
+              </div>
+            </div>
+            <div className="bg-white/20 p-2 rounded-full rotate-90">
+              <ArrowUpIcon />
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -2314,20 +2723,12 @@ function ExpenseTrackerApp() {
 
     const filteredTransactions = useMemo(() => {
       return transactions.filter(t => {
-        if (householdId) {
-          if (subTab === 'compartidos') {
-            if (t.scope !== 'shared') return false;
-          } else {
-            // Historial normal: mis movimientos personales + los compartidos que yo cargué (no los de otros)
-            if (t.scope === 'shared' && t.createdBy !== authUser?.uid) return false;
-          }
-        }
         if (filterPeriod === 'mes' && !isTransactionInSelectedMonth(t.date)) return false;
         if (filterCategory !== 'todos' && t.category !== filterCategory) return false;
         if (filterType !== 'todos' && t.type !== filterType) return false;
         return true;
       });
-    }, [transactions, filterPeriod, filterCategory, filterType, selectedMonth, householdId, subTab, authUser]);
+    }, [transactions, filterPeriod, filterCategory, filterType, selectedMonth]);
 
     return (
       <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-left-4 duration-300`}>
@@ -2342,14 +2743,6 @@ function ExpenseTrackerApp() {
           >
             Historial
           </button>
-          {householdId && (
-            <button 
-              onClick={() => setSubTab('compartidos')}
-              className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'compartidos' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
-            >
-              👨‍👩‍👧 Compartidos
-            </button>
-          )}
           <button 
             onClick={() => setSubTab('habituales')}
             className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'habituales' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
@@ -2364,7 +2757,7 @@ function ExpenseTrackerApp() {
           </button>
         </div>
 
-        {(subTab === 'historial' || subTab === 'compartidos') && (
+        {subTab === 'historial' && (
           <div className="space-y-4">
             <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border space-y-3`}>
               <p className={`text-xs font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider`}>Filtros de Búsqueda</p>
@@ -2433,16 +2826,6 @@ function ExpenseTrackerApp() {
                               <span className={`text-[10px] ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-gray-100 text-gray-600 border-gray-200'} px-2 py-0.5 rounded-md font-semibold tracking-wide shadow-sm border`}>
                                 {method.name}
                               </span>
-                              {subTab === 'compartidos' && t.createdByEmail && (
-                                <span className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-md font-semibold">
-                                  {t.createdBy === authUser?.uid ? 'Vos' : t.createdByEmail.split('@')[0]}
-                                </span>
-                              )}
-                              {subTab === 'historial' && householdId && t.scope === 'personal' && (
-                                <span className="text-[10px] bg-slate-500/10 text-slate-400 border border-slate-500/20 px-2 py-0.5 rounded-md font-semibold">
-                                  🔒 Solo yo
-                                </span>
-                              )}
                             </div>
                           )}
                         </div>
@@ -3401,14 +3784,6 @@ function ExpenseTrackerApp() {
                 <LogOutIcon /> Salir
               </button>
             </div>
-            <HouseholdPanel
-              isDarkMode={isDarkMode}
-              householdId={householdId}
-              householdCheckDone={householdCheckDone}
-              onCreate={handleCreateHousehold}
-              onJoin={handleJoinHousehold}
-              onLeave={handleLeaveHousehold}
-            />
             </>
           ) : (
             <form onSubmit={handleAuthSubmit} className="space-y-3">
@@ -3703,11 +4078,26 @@ function ExpenseTrackerApp() {
               startVoiceDictation={startVoiceDictation}
               isScanning={isScanning}
               isListening={isListening}
-              householdId={householdId}
-              authUser={authUser}
             />
           )}
           {activeTab === 'history' && <HistoryAndHabitual />}
+          {activeTab === 'trips' && (
+            <TripsView
+              isDarkMode={isDarkMode}
+              settings={settings}
+              authUser={authUser}
+              trips={trips}
+              tripsCheckDone={tripsCheckDone}
+              setActiveTab={setActiveTab}
+              onCreateTrip={handleCreateTrip}
+              onJoinTrip={handleJoinTrip}
+              onLeaveTrip={handleLeaveTrip}
+              onDeleteTrip={handleDeleteTrip}
+              onAddTripTransaction={handleAddTripTransaction}
+              onDeleteTripTransaction={handleDeleteTripTransaction}
+              onUpdateTrip={handleUpdateTrip}
+            />
+          )}
           {activeTab === 'settings' && <SettingsView />}
         </div>
 

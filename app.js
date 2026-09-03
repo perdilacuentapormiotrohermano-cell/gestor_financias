@@ -177,6 +177,119 @@ const AiChatInputForm = ({ isDarkMode, isLoading, onSend }) => {
   );
 };
 
+// Rueda de selección de cuentas — infinita (los ítems se repiten), con scroll-snap nativo
+// para que el "enganche" al centro sea fluido y lo maneje el propio navegador (sin física custom).
+// orientation: 'horizontal' | 'vertical'
+const AccountWheelPicker = ({ items, selectedId, onSelect, orientation = 'horizontal', getAccountBalance, blockedId, blockedLabel }) => {
+  const REPEAT = 9;
+  const isHorizontal = orientation !== 'vertical';
+  const cardMain = isHorizontal ? 156 : 72; // ancho (horizontal) o alto (vertical) de cada tarjeta, en px
+  const cardCross = isHorizontal ? 100 : undefined; // alto (horizontal) fijo
+  const gap = 12;
+  const step = cardMain + gap;
+
+  const scrollRef = React.useRef(null);
+  const settleTimer = React.useRef(null);
+  const didInit = React.useRef(false);
+
+  const n = items.length;
+  const midRep = Math.floor(REPEAT / 2);
+
+  const repeated = [];
+  for (let r = 0; r < REPEAT; r++) {
+    items.forEach((it, i) => repeated.push({ ...it, _key: `${it.id}_${r}`, _rep: r, _idx: i }));
+  }
+
+  const scrollToIndex = (index, smooth) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const pos = index * step;
+    el.scrollTo(isHorizontal ? { left: pos, behavior: smooth ? 'smooth' : 'auto' } : { top: pos, behavior: smooth ? 'smooth' : 'auto' });
+  };
+
+  React.useEffect(() => {
+    if (n === 0) return;
+    const startIdx = Math.max(0, items.findIndex(it => it.id === selectedId));
+    scrollToIndex(midRep * n + startIdx, false);
+    didInit.current = true;
+    // eslint-disable-next-line
+  }, [n]);
+
+  const handleScroll = () => {
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => {
+      const el = scrollRef.current;
+      if (!el || n === 0) return;
+      const pos = isHorizontal ? el.scrollLeft : el.scrollTop;
+      const rawIndex = Math.round(pos / step);
+      const itemIndex = ((rawIndex % n) + n) % n;
+      const chosen = items[itemIndex];
+      if (chosen && chosen.id !== selectedId) onSelect(chosen.id);
+
+      const lowBound = n * 2;
+      const highBound = n * REPEAT - n * 2;
+      if (rawIndex < lowBound || rawIndex > highBound) {
+        scrollToIndex(midRep * n + itemIndex, false);
+      }
+    }, 120);
+  };
+
+  if (n === 0) return null;
+
+  return (
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className={`flex ${isHorizontal ? 'flex-row overflow-x-auto snap-x' : 'flex-col overflow-y-auto snap-y'} snap-mandatory no-scrollbar`}
+      style={{
+        gap: `${gap}px`,
+        scrollSnapType: isHorizontal ? 'x mandatory' : 'y mandatory',
+        ...(isHorizontal
+          ? { paddingLeft: `calc(50% - ${cardMain / 2}px)`, paddingRight: `calc(50% - ${cardMain / 2}px)` }
+          : { paddingTop: `calc(50% - ${cardMain / 2}px)`, paddingBottom: `calc(50% - ${cardMain / 2}px)`, height: '220px', width: '100%' })
+      }}
+    >
+      {repeated.map(it => {
+        const isSelected = it.id === selectedId;
+        const isBlocked = blockedId && it.id === blockedId;
+        const shortLabel = { credito: 'Crédito', cuenta: 'Cuenta', efectivo: 'Efectivo', inversion: 'Inversión' }[it.type] || 'Cuenta';
+        const bal = getAccountBalance ? getAccountBalance(it.id) : 0;
+        return (
+          <button
+            type="button"
+            key={it._key}
+            onClick={() => {
+              if (isBlocked) return;
+              scrollToIndex(it._rep * n + it._idx, true);
+              onSelect(it.id);
+            }}
+            style={{ scrollSnapAlign: 'center', width: isHorizontal ? `${cardMain}px` : '100%', height: isHorizontal ? `${cardCross}px` : `${cardMain}px` }}
+            className={`shrink-0 rounded-2xl p-3 text-left bg-gradient-to-br ${it.color || 'from-gray-500 to-gray-700'} text-white shadow-md transition-all duration-200 ${isBlocked ? 'ring-2 ring-red-500 opacity-40 grayscale' : isSelected ? 'ring-2 ring-white scale-105 shadow-lg z-10' : 'opacity-55 scale-95'}`}
+          >
+            <div className={`flex ${isHorizontal ? 'flex-col' : 'flex-row items-center justify-between h-full'}`}>
+              <div className="flex justify-between items-start w-full">
+                <span className="text-[9px] font-black uppercase tracking-wider opacity-90">{shortLabel}</span>
+                {isSelected && !isBlocked && (
+                  <span className="w-4 h-4 rounded-full bg-white/90 text-emerald-600 flex items-center justify-center text-[10px] font-black shrink-0">✓</span>
+                )}
+                {isBlocked && (
+                  <span className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center text-[10px] font-black shrink-0">!</span>
+                )}
+              </div>
+              <div className={isHorizontal ? '' : 'flex-1 min-w-0 px-2'}>
+                <p className={`text-xs font-bold leading-tight line-clamp-2 ${isHorizontal ? 'mt-3' : ''}`}>{it.name}</p>
+                <p className="text-[9px] opacity-80 mt-0.5">
+                  {isBlocked ? (blockedLabel || 'No disponible') : `${it.type === 'credito' ? 'Deuda ' : 'Saldo '}${new Intl.NumberFormat('es-AR', { notation: 'compact' }).format(bal)}`}
+                </p>
+              </div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
 const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, settings, isDarkMode, transactions, setTransactions, setEmergencyFund, savingsGoals, setSavingsGoals, setActiveTab, handleSmartScan, startVoiceDictation, isScanning, isListening, authUser, trips, onAddTripTransaction, getAccountBalance }) => {
     const [type, setType] = useState('gasto');
     const [amountInput, setAmountInput] = useState('');
@@ -557,125 +670,55 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
                   {paymentMethods.length === 0 ? (
                     <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Todavía no agregaste ninguna cuenta o tarjeta.</p>
                   ) : (
-                    <div className="flex gap-2.5 overflow-x-auto snap-x snap-mandatory no-scrollbar -mx-1 px-1 pb-1">
-                      {paymentMethods.map(m => {
-                        const isSelected = methodId === m.id;
-                        const shortLabel = { credito: 'Crédito', cuenta: 'Cuenta', efectivo: 'Efectivo', inversion: 'Inversión' }[m.type] || 'Cuenta';
-                        const bal = getAccountBalance ? getAccountBalance(m.id) : 0;
-                        return (
-                          <button
-                            type="button"
-                            key={m.id}
-                            onClick={() => setMethodId(m.id)}
-                            className={`relative shrink-0 snap-start w-36 h-[88px] rounded-2xl p-3 text-left bg-gradient-to-br ${m.color || 'from-gray-500 to-gray-700'} text-white shadow-md transition-all ${isSelected ? 'ring-2 ring-white/90 scale-[1.03]' : 'opacity-70'}`}
-                          >
-                            <div className="flex justify-between items-start">
-                              <span className="text-[9px] font-black uppercase tracking-wider opacity-90">{shortLabel}</span>
-                              {isSelected && (
-                                <span className="w-4 h-4 rounded-full bg-white/90 text-emerald-600 flex items-center justify-center text-[10px] font-black">✓</span>
-                              )}
-                            </div>
-                            <p className="text-xs font-bold leading-tight mt-3 line-clamp-2">{m.name}</p>
-                            <p className="text-[9px] opacity-80 mt-0.5">
-                              {m.type === 'credito' ? 'Deuda ' : 'Saldo '}
-                              {new Intl.NumberFormat('es-AR', { notation: 'compact' }).format(bal)}
-                            </p>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <AccountWheelPicker
+                      items={paymentMethods}
+                      selectedId={methodId}
+                      onSelect={setMethodId}
+                      orientation="horizontal"
+                      getAccountBalance={getAccountBalance}
+                    />
                   )}
                 </div>
               )}
 
               {type === 'transferencia' && (
-                <div className="space-y-4">
-                  <div>
-                    <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>
-                      Cuenta de Origen
-                    </label>
-                    {paymentMethods.length === 0 ? (
-                      <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Todavía no agregaste ninguna cuenta o tarjeta.</p>
-                    ) : (
-                      <div className="flex gap-2.5 overflow-x-auto snap-x snap-mandatory no-scrollbar -mx-1 px-1 pb-1">
-                        {paymentMethods.map(m => {
-                          const isSelected = methodId === m.id;
-                          const isBlocked = transferDestId === m.id;
-                          const shortLabel = { credito: 'Crédito', cuenta: 'Cuenta', efectivo: 'Efectivo', inversion: 'Inversión' }[m.type] || 'Cuenta';
-                          const bal = getAccountBalance ? getAccountBalance(m.id) : 0;
-                          return (
-                            <button
-                              type="button"
-                              key={m.id}
-                              onClick={() => setMethodId(m.id)}
-                              className={`relative shrink-0 snap-start w-36 h-[88px] rounded-2xl p-3 text-left bg-gradient-to-br ${m.color || 'from-gray-500 to-gray-700'} text-white shadow-md transition-all ${isBlocked ? 'ring-2 ring-red-500 opacity-50' : isSelected ? 'ring-2 ring-white/90 scale-[1.03]' : 'opacity-70'}`}
-                            >
-                              <div className="flex justify-between items-start">
-                                <span className="text-[9px] font-black uppercase tracking-wider opacity-90">{shortLabel}</span>
-                                {isSelected && !isBlocked && (
-                                  <span className="w-4 h-4 rounded-full bg-white/90 text-emerald-600 flex items-center justify-center text-[10px] font-black">✓</span>
-                                )}
-                                {isBlocked && (
-                                  <span className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center text-[10px] font-black">!</span>
-                                )}
-                              </div>
-                              <p className="text-xs font-bold leading-tight mt-3 line-clamp-2">{m.name}</p>
-                              <p className="text-[9px] opacity-80 mt-0.5">
-                                {isBlocked ? 'Ya es el destino' : `${m.type === 'credito' ? 'Deuda ' : 'Saldo '}${new Intl.NumberFormat('es-AR', { notation: 'compact' }).format(bal)}`}
-                              </p>
-                            </button>
-                          );
-                        })}
+                <div>
+                  <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>
+                    Origen y Destino
+                  </label>
+                  {paymentMethods.length === 0 ? (
+                    <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Todavía no agregaste ninguna cuenta o tarjeta.</p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className={`text-center text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Desde</p>
+                        <AccountWheelPicker
+                          items={paymentMethods}
+                          selectedId={methodId}
+                          onSelect={setMethodId}
+                          orientation="vertical"
+                          getAccountBalance={getAccountBalance}
+                          blockedId={transferDestId}
+                          blockedLabel="Ya es el destino"
+                        />
                       </div>
-                    )}
-                  </div>
-
-                  <div className="flex justify-center">
-                    <span className={`text-lg ${isDarkMode ? 'text-slate-500' : 'text-gray-400'}`}>⇣</span>
-                  </div>
-
-                  <div>
-                    <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>
-                      Cuenta de Destino
-                    </label>
-                    {paymentMethods.length === 0 ? (
-                      <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Todavía no agregaste ninguna cuenta o tarjeta.</p>
-                    ) : (
-                      <div className="flex gap-2.5 overflow-x-auto snap-x snap-mandatory no-scrollbar -mx-1 px-1 pb-1">
-                        {paymentMethods.map(m => {
-                          const isSelected = transferDestId === m.id;
-                          const isBlocked = methodId === m.id;
-                          const shortLabel = { credito: 'Crédito', cuenta: 'Cuenta', efectivo: 'Efectivo', inversion: 'Inversión' }[m.type] || 'Cuenta';
-                          const bal = getAccountBalance ? getAccountBalance(m.id) : 0;
-                          return (
-                            <button
-                              type="button"
-                              key={m.id}
-                              onClick={() => setTransferDestId(m.id)}
-                              className={`relative shrink-0 snap-start w-36 h-[88px] rounded-2xl p-3 text-left bg-gradient-to-br ${m.color || 'from-gray-500 to-gray-700'} text-white shadow-md transition-all ${isBlocked ? 'ring-2 ring-red-500 opacity-50' : isSelected ? 'ring-2 ring-white/90 scale-[1.03]' : 'opacity-70'}`}
-                            >
-                              <div className="flex justify-between items-start">
-                                <span className="text-[9px] font-black uppercase tracking-wider opacity-90">{shortLabel}</span>
-                                {isSelected && !isBlocked && (
-                                  <span className="w-4 h-4 rounded-full bg-white/90 text-emerald-600 flex items-center justify-center text-[10px] font-black">✓</span>
-                                )}
-                                {isBlocked && (
-                                  <span className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center text-[10px] font-black">!</span>
-                                )}
-                              </div>
-                              <p className="text-xs font-bold leading-tight mt-3 line-clamp-2">{m.name}</p>
-                              <p className="text-[9px] opacity-80 mt-0.5">
-                                {isBlocked ? 'Ya es el origen' : (m.type === 'credito' ? `Deuda ${new Intl.NumberFormat('es-AR', { notation: 'compact' }).format(bal)}` : `Saldo ${new Intl.NumberFormat('es-AR', { notation: 'compact' }).format(bal)}`)}
-                              </p>
-                            </button>
-                          );
-                        })}
+                      <div>
+                        <p className={`text-center text-[10px] font-bold mb-1 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Hacia</p>
+                        <AccountWheelPicker
+                          items={paymentMethods}
+                          selectedId={transferDestId}
+                          onSelect={setTransferDestId}
+                          orientation="vertical"
+                          getAccountBalance={getAccountBalance}
+                          blockedId={methodId}
+                          blockedLabel="Ya es el origen"
+                        />
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {methodId && transferDestId && methodId === transferDestId && (
-                    <p className="text-xs text-red-500 font-semibold bg-red-500/10 border border-red-500/20 rounded-xl p-2.5">
+                    <p className="text-xs text-red-500 font-semibold bg-red-500/10 border border-red-500/20 rounded-xl p-2.5 mt-3">
                       La cuenta de origen y la cuenta de destino deben ser diferentes.
                     </p>
                   )}

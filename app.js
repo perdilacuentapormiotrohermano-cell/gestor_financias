@@ -177,7 +177,7 @@ const AiChatInputForm = ({ isDarkMode, isLoading, onSend }) => {
   );
 };
 
-const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, settings, isDarkMode, transactions, setTransactions, setEmergencyFund, savingsGoals, setSavingsGoals, setActiveTab, handleSmartScan, startVoiceDictation, isScanning, isListening, authUser, trips, onAddTripTransaction }) => {
+const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, settings, isDarkMode, transactions, setTransactions, setEmergencyFund, savingsGoals, setSavingsGoals, setActiveTab, handleSmartScan, startVoiceDictation, isScanning, isListening, authUser, trips, onAddTripTransaction, getAccountBalance }) => {
     const [type, setType] = useState('gasto');
     const [amountInput, setAmountInput] = useState('');
     const [description, setDescription] = useState('');
@@ -338,8 +338,8 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
         description: type === 'ahorro' ? (targetGoalId === 'emergency' ? 'Aporte Fondo de Emergencia' : `Aporte Meta: ${savingsGoals.find(g => g.id === targetGoalId)?.name || ''}`) : description,
         category: finalCategoryId,
         typeClassification: type === 'ahorro' ? 'otro' : typeClassification,
-        methodId: type === 'gasto' ? methodId : null,
-        bankId: type === 'ingreso' ? (destBankId || null) : null,
+        methodId: (type === 'gasto' || type === 'ingreso') ? (methodId || null) : null,
+        bankId: null,
         date: getDateToSave(),
         tripId: shouldImputeTrip ? selectedTrip.id : null
       };
@@ -536,40 +536,19 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
 
           <div className="space-y-4">
             <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border space-y-4`}>
-              {type === 'ingreso' && (
+              {(type === 'ingreso' || type === 'gasto') && (
                 <div>
                   <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>
-                    Cuenta Bancaria (Destino)
-                  </label>
-                  <div className="relative">
-                    <select 
-                      value={destBankId}
-                      onChange={(e) => setDestBankId(e.target.value)}
-                      className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} border rounded-xl p-3 outline-none font-bold appearance-none focus:border-blue-300 transition-colors text-sm`}
-                    >
-                      <option value="">Efectivo / Sin Cuenta vinculada</option>
-                      {bankAccounts.map(b => (
-                        <option key={b.id} value={b.id}>{b.bankName} - {b.accountType}</option>
-                      ))}
-                    </select>
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {type === 'gasto' && (
-                <div>
-                  <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>
-                    Medio de Pago
+                    {type === 'ingreso' ? 'Cuenta de Destino' : 'Cuenta de Origen / Medio de Pago'}
                   </label>
                   {paymentMethods.length === 0 ? (
-                    <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Todavía no agregaste ningún medio de pago.</p>
+                    <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Todavía no agregaste ninguna cuenta o tarjeta.</p>
                   ) : (
                     <div className="flex gap-2.5 overflow-x-auto snap-x snap-mandatory no-scrollbar -mx-1 px-1 pb-1">
                       {paymentMethods.map(m => {
                         const isSelected = methodId === m.id;
-                        const shortLabel = { credit: 'Crédito', debit: 'Débito', cash: 'Efectivo', wallet: 'Billetera' }[m.type] || 'Medio';
+                        const shortLabel = { credito: 'Crédito', cuenta: 'Cuenta', efectivo: 'Efectivo', inversion: 'Inversión' }[m.type] || 'Cuenta';
+                        const bal = getAccountBalance ? getAccountBalance(m.id) : 0;
                         return (
                           <button
                             type="button"
@@ -583,10 +562,11 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
                                 <span className="w-4 h-4 rounded-full bg-white/90 text-emerald-600 flex items-center justify-center text-[10px] font-black">✓</span>
                               )}
                             </div>
-                            <p className="text-xs font-bold leading-tight mt-4 line-clamp-2">{m.name}</p>
-                            {m.limit ? (
-                              <p className="text-[9px] opacity-80 mt-0.5">Límite {new Intl.NumberFormat('es-AR', { notation: 'compact' }).format(m.limit)}</p>
-                            ) : null}
+                            <p className="text-xs font-bold leading-tight mt-3 line-clamp-2">{m.name}</p>
+                            <p className="text-[9px] opacity-80 mt-0.5">
+                              {m.type === 'credito' ? 'Deuda ' : 'Saldo '}
+                              {new Intl.NumberFormat('es-AR', { notation: 'compact' }).format(bal)}
+                            </p>
                           </button>
                         );
                       })}
@@ -1419,8 +1399,8 @@ function ExpenseTrackerApp() {
       try { setPaymentMethods(JSON.parse(savedMethods)); } catch (e) {}
     } else {
       setPaymentMethods([
-        { id: 1, name: 'Efectivo', type: 'cash', color: 'from-green-400 to-emerald-600' },
-        { id: 2, name: 'Tarjeta Débito', type: 'debit', color: 'from-blue-400 to-blue-600' }
+        { id: 1, name: 'Efectivo', type: 'efectivo', color: 'from-green-400 to-emerald-600', initialBalance: 0 },
+        { id: 2, name: 'Cuenta Sueldo', type: 'cuenta', color: 'from-blue-400 to-blue-600', initialBalance: 0 }
       ]);
     }
 
@@ -1558,13 +1538,38 @@ function ExpenseTrackerApp() {
         const data = snap.data() || {};
         isRemoteUpdate.current = true;
         if (data.transactions) setTransactions(data.transactions);
-        if (data.paymentMethods) setPaymentMethods(data.paymentMethods);
+
+        // --- Migración al modelo unificado de cuentas (Efectivo / Cuenta / Crédito / Inversión) ---
+        const normalizeType = (t) => {
+          if (t === 'cash') return 'efectivo';
+          if (t === 'debit' || t === 'wallet') return 'cuenta';
+          if (t === 'credit') return 'credito';
+          if (['efectivo', 'cuenta', 'credito', 'inversion'].includes(t)) return t;
+          return 'cuenta';
+        };
+        let mergedMethods = (data.paymentMethods || []).map(m => ({ ...m, type: normalizeType(m.type) }));
+        if (data.bankAccounts && data.bankAccounts.length > 0) {
+          const existingIds = new Set(mergedMethods.map(m => m.id));
+          const migratedBanks = data.bankAccounts.filter(b => !existingIds.has(b.id)).map(b => ({
+            id: b.id,
+            name: `${b.bankName || 'Cuenta'}${b.accountType ? ' - ' + b.accountType : ''}`,
+            type: 'cuenta',
+            initialBalance: parseFloat(b.initialBalance !== undefined ? b.initialBalance : b.balance) || 0,
+            color: 'from-blue-400 to-blue-600'
+          }));
+          mergedMethods = [...mergedMethods, ...migratedBanks];
+          setBankAccounts([]);
+        } else if (data.bankAccounts) {
+          setBankAccounts(data.bankAccounts);
+        }
+        if (data.paymentMethods || data.bankAccounts) setPaymentMethods(mergedMethods);
+        // --- Fin migración ---
+
         if (data.settings) setSettings(data.settings);
         if (data.categories) setCategories(data.categories);
         if (data.typesList) setTypesList(data.typesList);
         if (data.commitments) setCommitments(data.commitments);
         if (data.installmentTracks) setInstallmentTracks(data.installmentTracks);
-        if (data.bankAccounts) setBankAccounts(data.bankAccounts);
         if (data.savingsGoals) setSavingsGoals(data.savingsGoals);
         if (data.emergencyFund) setEmergencyFund(data.emergencyFund);
         hasLoadedCloudOnce.current = true;
@@ -1636,6 +1641,31 @@ function ExpenseTrackerApp() {
                 bal -= parseFloat(t.amount);
             }
         }
+    });
+    return bal;
+  };
+
+  // Saldo (o deuda, si es tarjeta de crédito) de una cuenta unificada (Tarjetas = Efectivo/Cuenta/Crédito/Inversión)
+  const getAccountBalance = (accountId) => {
+    const acc = paymentMethods.find(m => m.id === accountId);
+    if (!acc) return 0;
+    if (acc.type === 'credito') {
+      let deuda = 0;
+      transactions.forEach(t => {
+        if (t.methodId === accountId) {
+          if (t.type === 'gasto') deuda += parseFloat(t.amount || 0);
+          else if (t.type === 'ingreso') deuda -= parseFloat(t.amount || 0);
+        }
+      });
+      return deuda;
+    }
+    let bal = parseFloat(acc.initialBalance || 0);
+    transactions.forEach(t => {
+      if (t.type === 'ingreso' && (t.methodId === accountId || (!t.methodId && t.bankId === accountId))) {
+        bal += parseFloat(t.amount || 0);
+      } else if (t.type === 'gasto' && t.methodId === accountId) {
+        bal -= parseFloat(t.amount || 0);
+      }
     });
     return bal;
   };
@@ -2060,7 +2090,8 @@ function ExpenseTrackerApp() {
   const CardsManager = () => {
     const [isAdding, setIsAdding] = useState(false);
     const [newCardName, setNewCardName] = useState('');
-    const [newCardType, setNewCardType] = useState('credit');
+    const [newCardType, setNewCardType] = useState('credito');
+    const [newCardBalance, setNewCardBalance] = useState('');
     
     const [cardFilterMode, setCardFilterMode] = useState('mes');
     const [cardMonth, setCardMonth] = useState(selectedMonth);
@@ -2084,9 +2115,13 @@ function ExpenseTrackerApp() {
       if (selectedCardId !== null) {
         const card = paymentMethods.find(m => m.id === selectedCardId);
         if (card) {
-          const hasLimits = card.limit || card.closingDay || card.dueDay;
-          setIsEditingLimits(!hasLimits); 
-          setCardLimitInput(card.limit ? formatAmountInput(card.limit.toString()) : '');
+          const hasLimits = card.type === 'credito' ? (card.limit || card.closingDay || card.dueDay) : true;
+          setIsEditingLimits(!hasLimits);
+          setCardLimitInput(
+            card.type === 'credito'
+              ? (card.limit ? formatAmountInput(card.limit.toString()) : '')
+              : (card.initialBalance ? formatAmountInput(card.initialBalance.toString()) : '')
+          );
           
           const today = new Date();
           const yyyy = today.getFullYear();
@@ -2106,14 +2141,14 @@ function ExpenseTrackerApp() {
     }, [selectedCardId, paymentMethods]);
     
     const typeColors = {
-      credit: 'from-purple-500 to-indigo-600',
-      debit: 'from-blue-400 to-blue-600',
-      cash: 'from-green-400 to-emerald-600',
-      wallet: 'from-sky-400 to-cyan-600'
+      credito: 'from-purple-500 to-indigo-600',
+      cuenta: 'from-blue-400 to-blue-600',
+      efectivo: 'from-green-400 to-emerald-600',
+      inversion: 'from-amber-400 to-orange-600'
     };
 
     const typeLabels = {
-      credit: 'Crédito', debit: 'Débito', cash: 'Efectivo', wallet: 'Billetera Virtual'
+      credito: 'Tarjeta de Crédito', cuenta: 'Cuenta Sueldo/Ahorro', efectivo: 'Efectivo', inversion: 'Ahorro / Inversión'
     };
 
     const currentMonthExpenses = useMemo(() => {
@@ -2133,11 +2168,13 @@ function ExpenseTrackerApp() {
         id: Date.now(),
         name: newCardName,
         type: newCardType,
-        color: typeColors[newCardType] || 'from-gray-500 to-gray-700'
+        color: typeColors[newCardType] || 'from-gray-500 to-gray-700',
+        initialBalance: newCardType !== 'credito' ? (parseFormattedAmount(newCardBalance) || 0) : 0
       };
       setPaymentMethods([...paymentMethods, newCard]);
       setIsAdding(false);
       setNewCardName('');
+      setNewCardBalance('');
     };
 
     const handleDeleteCard = (e, id) => {
@@ -2148,14 +2185,20 @@ function ExpenseTrackerApp() {
 
     const handleSaveLimits = (e) => {
       e.preventDefault();
-      const numLimit = parseFormattedAmount(cardLimitInput);
+      const numVal = parseFormattedAmount(cardLimitInput);
+      const card = paymentMethods.find(m => m.id === selectedCardId);
       setPaymentMethods(paymentMethods.map(m =>
-        m.id === selectedCardId ? {
-          ...m,
-          limit: numLimit,
-          closingDay: cardClosingDay,
-          dueDay: cardDueDay
-        } : m
+        m.id === selectedCardId ? (
+          card && card.type === 'credito' ? {
+            ...m,
+            limit: numVal,
+            closingDay: cardClosingDay,
+            dueDay: cardDueDay
+          } : {
+            ...m,
+            initialBalance: numVal
+          }
+        ) : m
       ));
       setIsEditingLimits(false);
     };
@@ -2362,13 +2405,20 @@ function ExpenseTrackerApp() {
                 <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-5 shadow-sm border relative overflow-hidden`}>
                   <div className="flex justify-between items-start mb-6">
                     <div>
-                      <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'} text-lg`}>Límites y Cierres</h3>
+                      <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'} text-lg`}>{card.type === 'credito' ? 'Límites y Cierres' : 'Saldo de la Cuenta'}</h3>
                       <p className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mt-0.5`}>Estado del Mes Actual</p>
                     </div>
                     <button onClick={() => setIsEditingLimits(true)} className="text-blue-500 p-1.5 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg transition-colors"><EditIcon /></button>
                   </div>
+
+                  {card.type !== 'credito' && (
+                    <div className={`mb-2 ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} p-4 rounded-2xl border`}>
+                      <p className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-1`}>Saldo disponible</p>
+                      <p className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(getAccountBalance(card.id))}</p>
+                    </div>
+                  )}
                   
-                  {card.limit > 0 && (
+                  {card.type === 'credito' && card.limit > 0 && (
                     <div className={`mb-6 ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} p-4 rounded-2xl border`}>
                       <div className={`flex justify-between text-xs font-bold ${isDarkMode ? 'text-slate-300' : 'text-gray-700'} mb-2`}>
                         <span>Límite Total</span>
@@ -2384,6 +2434,7 @@ function ExpenseTrackerApp() {
                     </div>
                   )}
 
+                  {card.type === 'credito' && (
                   <div className="grid grid-cols-2 gap-3">
                     <div className={`${isDarkMode ? 'bg-slate-800/60 border-slate-800 text-slate-200' : 'bg-white border-gray-50 text-gray-800'} border-2 p-3 rounded-xl flex items-center gap-3`}>
                       <div className="w-8 h-8 rounded-full bg-orange-500/10 text-orange-400 flex items-center justify-center shrink-0 font-black text-xs">
@@ -2404,13 +2455,14 @@ function ExpenseTrackerApp() {
                       </div>
                     </div>
                   </div>
+                  )}
                 </div>
               ) : (
                 <form onSubmit={handleSaveLimits} className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-5 shadow-sm border space-y-4`}>
                   <h3 className={`text-sm font-bold ${isDarkMode ? 'text-white border-slate-800' : 'text-gray-800 border-gray-100'} border-b pb-2`}>Configurar Tarjeta</h3>
                   
                   <div>
-                    <label className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} font-bold block mb-1`}>Límite Total de Crédito</label>
+                    <label className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} font-bold block mb-1`}>{card.type === 'credito' ? 'Límite Total de Crédito' : 'Saldo Inicial'}</label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">$</span>
                       <input
@@ -2424,6 +2476,7 @@ function ExpenseTrackerApp() {
                     </div>
                   </div>
 
+                  {card.type === 'credito' && (
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} font-bold block mb-1`}>Fecha de Cierre</label>
@@ -2444,9 +2497,10 @@ function ExpenseTrackerApp() {
                       />
                     </div>
                   </div>
+                  )}
 
                   <div className="flex gap-2 pt-2">
-                    { (card.limit || card.closingDay || card.dueDay) && (
+                    { (card.limit || card.closingDay || card.dueDay || card.initialBalance) && (
                       <button type="button" onClick={() => setIsEditingLimits(false)} className={`flex-1 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} py-2.5 rounded-xl text-xs font-semibold transition-colors`}>Cancelar</button>
                     )}
                     <button type="submit" className="flex-1 bg-blue-600 text-white py-2.5 rounded-xl text-xs font-semibold shadow-md shadow-blue-500/20 hover:bg-blue-700 transition-colors">Guardar Cambios</button>
@@ -2485,13 +2539,23 @@ function ExpenseTrackerApp() {
             <select 
               value={newCardType}
               onChange={(e) => setNewCardType(e.target.value)}
-              className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} rounded-xl p-3 mb-4 outline-none focus:border-blue-300 appearance-none transition-colors`}
+              className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} rounded-xl p-3 mb-3 outline-none focus:border-blue-300 appearance-none transition-colors`}
             >
-              <option value="credit">Tarjeta de Crédito</option>
-              <option value="debit">Tarjeta de Débito</option>
-              <option value="wallet">Billetera Virtual (Ej. MP)</option>
-              <option value="cash">Efectivo</option>
+              <option value="credito">Tarjeta de Crédito</option>
+              <option value="cuenta">Cuenta Sueldo/Ahorro (Banco o Billetera)</option>
+              <option value="efectivo">Efectivo</option>
+              <option value="inversion">Ahorro / Inversión</option>
             </select>
+            {newCardType !== 'credito' && (
+              <input 
+                type="text" 
+                inputMode="decimal"
+                placeholder="Saldo inicial (ej. 50.000)" 
+                value={newCardBalance}
+                onChange={(e) => setNewCardBalance(formatAmountInput(e.target.value))}
+                className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} rounded-xl p-3 mb-4 outline-none focus:border-blue-300 transition-colors`}
+              />
+            )}
             <div className="flex gap-2">
               <button type="button" onClick={() => setIsAdding(false)} className={`flex-1 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} font-semibold py-3 rounded-xl transition-colors`}>Cancelar</button>
               <button type="submit" className="flex-1 bg-blue-600 text-white font-semibold py-3 rounded-xl shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-colors active:scale-95">Guardar</button>
@@ -2527,10 +2591,15 @@ function ExpenseTrackerApp() {
                 <h3 className="text-lg font-bold mb-1 opacity-90">{method.name}</h3>
                 <div className="flex justify-between items-end">
                   <div>
-                    <p className="text-[10px] text-white/70 uppercase tracking-widest mb-0.5">Gastos este mes</p>
-                    <p className="text-2xl font-bold tracking-tight">
-                      {formatCurrency(currentMonthExpenses[method.id] || 0)}
+                    <p className="text-[10px] text-white/70 uppercase tracking-widest mb-0.5">
+                      {method.type === 'credito' ? 'Deuda acumulada' : 'Saldo disponible'}
                     </p>
+                    <p className="text-2xl font-bold tracking-tight">
+                      {formatCurrency(getAccountBalance(method.id))}
+                    </p>
+                    {method.type === 'credito' && method.limit > 0 && (
+                      <p className="text-[10px] text-white/70 mt-0.5">de {formatCurrency(method.limit)} de límite</p>
+                    )}
                   </div>
                   <span className="text-xs bg-white/20 px-2.5 py-1 rounded-lg backdrop-blur-sm text-white/95 font-medium">Ver historial →</span>
                 </div>
@@ -2760,40 +2829,32 @@ function ExpenseTrackerApp() {
         )}
 
         <div>
-          <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'} mb-4`}>Cuentas Vinculadas</h3>
+          <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'} mb-4`}>Mis Cuentas y Tarjetas</h3>
           <div className="flex overflow-x-auto gap-3 pb-2 -mx-4 px-4 snap-x snap-mandatory no-scrollbar">
-            {bankAccounts.map(bank => {
-              const balanceStr = formatCurrency(getBankBalance(bank.id));
+            {paymentMethods.map(m => {
+              const balanceStr = formatCurrency(getAccountBalance(m.id));
               let textSizeClass = "text-lg";
               if (balanceStr.length > 16) textSizeClass = "text-[11px]";
               else if (balanceStr.length > 14) textSizeClass = "text-xs";
               else if (balanceStr.length > 12) textSizeClass = "text-sm";
               else if (balanceStr.length > 10) textSizeClass = "text-base";
+              const typeLabel = { credito: 'Tarjeta de Crédito', cuenta: 'Cuenta Sueldo/Ahorro', efectivo: 'Efectivo', inversion: 'Ahorro / Inversión' }[m.type] || 'Cuenta';
 
               return (
-                <div key={bank.id} className={`min-w-[160px] max-w-[160px] ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border flex-shrink-0 snap-start`}>
+                <div key={m.id} onClick={() => setActiveTab('cards')} className={`min-w-[160px] max-w-[160px] bg-gradient-to-br ${m.color || 'from-gray-500 to-gray-700'} rounded-2xl p-4 shadow-sm flex-shrink-0 snap-start cursor-pointer`}>
                   <div className="flex items-center gap-2 mb-3">
-                    <div className="w-8 h-8 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center shrink-0">
-                      <BuildingIcon />
-                    </div>
-                    <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'} truncate`}>{bank.bankName}</span>
+                    <span className="text-sm font-bold text-white truncate">{m.name}</span>
                   </div>
-                  <p className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} font-medium uppercase tracking-wider mb-0.5`}>{bank.accountType}</p>
-                  <p className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'} ${textSizeClass} truncate transition-all duration-300`}>{balanceStr}</p>
+                  <p className="text-[10px] text-white/70 font-medium uppercase tracking-wider mb-0.5">{m.type === 'credito' ? 'Deuda' : typeLabel}</p>
+                  <p className={`font-bold text-white ${textSizeClass} truncate transition-all duration-300`}>{balanceStr}</p>
                 </div>
               );
             })}
-            <div className={`min-w-[160px] max-w-[160px] ${isDarkMode ? 'bg-slate-900/40 border-slate-800 hover:bg-slate-900' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'} rounded-2xl border-2 border-dashed flex flex-col items-center justify-center p-4 flex-shrink-0 cursor-pointer transition-colors snap-start`} onClick={() => {
-               setActiveTab('settings');
-               setTimeout(() => {
-                  const el = document.getElementById('bancos-section');
-                  if (el) el.scrollIntoView({ behavior: 'smooth' });
-               }, 150);
-            }}>
+            <div className={`min-w-[160px] max-w-[160px] ${isDarkMode ? 'bg-slate-900/40 border-slate-800 hover:bg-slate-900' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'} rounded-2xl border-2 border-dashed flex flex-col items-center justify-center p-4 flex-shrink-0 cursor-pointer transition-colors snap-start`} onClick={() => setActiveTab('cards')}>
                <div className={`w-8 h-8 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-gray-200 text-gray-500'} flex items-center justify-center mb-2`}>
                   <PlusIcon active={false} />
                </div>
-               <span className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Vincular otra</span>
+               <span className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Agregar cuenta</span>
             </div>
           </div>
         </div>
@@ -4102,7 +4163,7 @@ function ExpenseTrackerApp() {
       const currentMonthCardExpenses = transactions.filter(t => {
         if (t.type !== 'gasto' || !isTransactionInSelectedMonth(t.date)) return false;
         const method = paymentMethods.find(m => m.id === t.methodId);
-        return method && (method.type === 'credit' || method.type === 'debit');
+        return method && (method.type === 'credito' || method.type === 'cuenta');
       }).reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
       
       return currentExpense > 0 ? Math.round((currentMonthCardExpenses / currentExpense) * 100) : 0;
@@ -4504,133 +4565,6 @@ function ExpenseTrackerApp() {
           </div>
         </div>
 
-        <div id="bancos-section" className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-5 shadow-sm border mb-6`}>
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <h3 className="text-xs font-bold text-blue-500 uppercase tracking-wider">Cuentas Bancarias</h3>
-              <p className="text-[10px] text-gray-400 mt-0.5">Gestión manual (Prototipo)</p>
-            </div>
-            <button 
-              type="button"
-              onClick={() => setIsLinkingBank(!isLinkingBank)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors shadow-sm ${isLinkingBank ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}`}
-            >
-              {isLinkingBank ? 'Cancelar' : '+ Vincular Banco'}
-            </button>
-          </div>
-
-          {isLinkingBank && (
-            <form onSubmit={handleLinkBank} className={`mb-4 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-gray-50 border-gray-100'} p-4 rounded-2xl border animate-in zoom-in-95 duration-200`}>
-              {isSimulatingSync ? (
-                <div className="flex flex-col items-center justify-center py-6 space-y-3">
-                  <div className="w-8 h-8 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
-                  <p className={`text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>Estableciendo conexión segura...</p>
-                </div>
-              ) : (
-                <>
-                  <p className={`text-xs font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'} mb-3`}>Conexión Bancaria</p>
-                  
-                  <label className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} font-bold block mb-1`}>Entidad Bancaria</label>
-                  <select value={newBankName} onChange={e => setNewBankName(e.target.value)} className={`p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm w-full mb-3 outline-none`}>
-                    <option value="Galicia">Banco Galicia</option>
-                    <option value="Santander">Santander</option>
-                    <option value="BBVA">BBVA</option>
-                    <option value="Brubank">Brubank</option>
-                    <option value="Mercado Pago">Mercado Pago (CVU)</option>
-                    <option value="Macro">Banco Macro</option>
-                    <option value="Nación">Banco Nación</option>
-                  </select>
-
-                  <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div>
-                      <label className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} font-bold block mb-1`}>Tipo de Cuenta</label>
-                      <select value={newBankAccountType} onChange={e => setNewBankAccountType(e.target.value)} className={`p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm w-full outline-none`}>
-                        <option value="Caja de Ahorro">Caja de Ahorro</option>
-                        <option value="Cuenta Sueldo">Cuenta Sueldo</option>
-                        <option value="Cuenta Corriente">Cuenta Corriente</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} font-bold block mb-1`}>Saldo Actual</label>
-                      <input type="text" placeholder="Ej. 150000" value={newBankBalance} onChange={e => setNewBankBalance(formatAmountInput(e.target.value))} className={`p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm w-full outline-none`} required inputMode="decimal" />
-                    </div>
-                  </div>
-
-                  <button type="submit" className="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-xl text-sm shadow-md shadow-blue-500/20 active:scale-95 transition-transform">
-                    Simular Conexión y Guardar
-                  </button>
-                  <p className="text-[9px] text-gray-400 mt-2 text-center leading-tight">
-                    *Nota: En esta versión prototipo la sincronización es manual. En una app real de producción, aquí se usaría un proveedor de Open Banking como Prometeo o Belvo.
-                  </p>
-                </>
-              )}
-            </form>
-          )}
-
-          <div className="space-y-2">
-            {bankAccounts.length === 0 && !isLinkingBank && (
-              <p className="text-center text-xs text-gray-400 py-2">No hay bancos vinculados.</p>
-            )}
-            {bankAccounts.map(b => {
-              const linkedCards = paymentMethods.filter(m => m.bankId === b.id);
-              const unlinkedCards = paymentMethods.filter(m => m.bankId !== b.id && m.type !== 'cash');
-              
-              return (
-              <div key={b.id} className={`flex flex-col p-3 ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} rounded-xl border`}>
-                <div className="flex justify-between items-center mb-2">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-blue-500/10 text-blue-400 flex items-center justify-center shrink-0">
-                      <BuildingIcon />
-                    </div>
-                    <div>
-                      <p className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{b.bankName}</p>
-                      <p className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} font-medium`}>{b.accountType} • {formatCurrency(getBankBalance(b.id))}</p>
-                    </div>
-                  </div>
-                  <button onClick={() => handleDeleteBank(b.id)} className="text-red-400 p-2 hover:bg-red-500/10 rounded-lg"><TrashIcon /></button>
-                </div>
-
-                <div className={`mt-2 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-gray-200'}`}>
-                    <p className={`text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>Tarjetas Vinculadas</p>
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                        {linkedCards.length === 0 && <span className="text-[10px] text-gray-400">Ninguna tarjeta vinculada</span>}
-                        {linkedCards.map(c => (
-                            <span key={c.id} className={`text-[10px] ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-gray-200 text-gray-600'} px-2 py-1 rounded-md flex items-center gap-1 shadow-sm border`}>
-                                💳 {c.name}
-                                <button onClick={() => setPaymentMethods(paymentMethods.map(pm => pm.id === c.id ? {...pm, bankId: null} : pm))} className="text-gray-400 hover:text-red-500 ml-1 font-bold text-xs">×</button>
-                            </span>
-                        ))}
-                    </div>
-                    {unlinkedCards.length > 0 && (
-                        <div className="flex gap-2 items-center mt-1">
-                            <select 
-                                id={`select_card_${b.id}`}
-                                className={`text-[10px] p-1.5 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-700'} outline-none flex-1`}
-                            >
-                                <option value="">Vincular otra tarjeta...</option>
-                                {unlinkedCards.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                            <button 
-                                onClick={() => {
-                                    const selectEl = document.getElementById(`select_card_${b.id}`);
-                                    const cardId = Number(selectEl.value);
-                                    if(cardId) {
-                                        setPaymentMethods(paymentMethods.map(pm => pm.id === cardId ? {...pm, bankId: b.id} : pm));
-                                        selectEl.value = '';
-                                    }
-                                }}
-                                className={`px-2 py-1.5 rounded-lg text-[10px] font-bold ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} transition-colors`}
-                            >
-                                Vincular
-                            </button>
-                        </div>
-                    )}
-                </div>
-              </div>
-            )})}
-          </div>
-        </div>
-
       </div>
     );
   };
@@ -4668,6 +4602,7 @@ function ExpenseTrackerApp() {
               authUser={authUser}
               trips={trips}
               onAddTripTransaction={handleAddTripTransaction}
+              getAccountBalance={getAccountBalance}
             />
           )}
           {activeTab === 'history' && <HistoryAndHabitual />}

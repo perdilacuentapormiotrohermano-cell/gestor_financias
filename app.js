@@ -2930,26 +2930,6 @@ function ExpenseTrackerApp() {
               <ArrowUpIcon />
             </div>
           </div>
-
-          <div 
-            onClick={() => setActiveTab('trips')}
-            className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-3xl p-5 shadow-sm text-white flex items-center justify-between cursor-pointer hover:shadow-md transition-all active:scale-[0.98] mt-3"
-          >
-            <div className="flex items-center gap-4">
-              <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-sm">
-                <PlaneIcon />
-              </div>
-              <div>
-                <p className="font-bold text-lg mb-0.5">Modo Viaje</p>
-                <p className="text-orange-100 text-xs font-medium">
-                  {trips.length > 0 ? `${trips.length} ${trips.length === 1 ? 'viaje activo' : 'viajes activos'}` : 'Fondo, gastos e invitados por viaje'}
-                </p>
-              </div>
-            </div>
-            <div className="bg-white/20 p-2 rounded-full rotate-90">
-              <ArrowUpIcon />
-            </div>
-          </div>
         </div>
 
         {quickTrip && activeTrip && (

@@ -177,12 +177,15 @@ const AiChatInputForm = ({ isDarkMode, isLoading, onSend }) => {
   );
 };
 
-const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, settings, isDarkMode, transactions, setTransactions, setEmergencyFund, savingsGoals, setSavingsGoals, setActiveTab, handleSmartScan, startVoiceDictation, isScanning, isListening, authUser, trips, onAddTripTransaction }) => {
+const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, settings, isDarkMode, transactions, setTransactions, setEmergencyFund, savingsGoals, setSavingsGoals, setActiveTab, handleSmartScan, startVoiceDictation, isScanning, isListening, activeTrip, onAddTripTransaction }) => {
     const [type, setType] = useState('gasto');
     const [amountInput, setAmountInput] = useState('');
     const [description, setDescription] = useState('');
     const [smartInputText, setSmartInputText] = useState('');
     const [smartFeedback, setSmartFeedback] = useState(null); // { type: 'error'|'info', text: '...' } | null
+    const [imputeToTrip, setImputeToTrip] = useState(!!activeTrip);
+    const [tripCategoryId, setTripCategoryId] = useState((activeTrip && activeTrip.categories && activeTrip.categories[0]) ? activeTrip.categories[0].id : '');
+    const [savingTrip, setSavingTrip] = useState(false);
     
     const availableCategories = categories.filter(c => c.type === (type === 'ahorro' ? 'gasto' : type));
     const [categoryId, setCategoryId] = useState(availableCategories.length > 0 ? availableCategories[0].id : '');
@@ -190,31 +193,6 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
     const [methodId, setMethodId] = useState(paymentMethods.length > 0 ? paymentMethods[0].id : '');
     const [destBankId, setDestBankId] = useState('');
     const [targetGoalId, setTargetGoalId] = useState('emergency');
-
-    const availableTrips = trips || [];
-    const [imputeTrip, setImputeTrip] = useState(false);
-    const [selectedTripId, setSelectedTripId] = useState(availableTrips[0]?.id || '');
-    const selectedTrip = availableTrips.find(t => t.id === selectedTripId) || null;
-    const tripCategoriesList = (selectedTrip && selectedTrip.categories) || [];
-    const [tripCategoryId, setTripCategoryId] = useState(tripCategoriesList[0]?.id || '');
-
-    useEffect(() => {
-      if (availableTrips.length > 0 && !availableTrips.some(t => t.id === selectedTripId)) {
-        setSelectedTripId(availableTrips[0].id);
-      }
-      if (availableTrips.length === 0 && imputeTrip) {
-        setImputeTrip(false);
-      }
-      // eslint-disable-next-line
-    }, [trips]);
-
-    useEffect(() => {
-      const cats = (selectedTrip && selectedTrip.categories) || [];
-      if (!cats.some(c => c.id === tripCategoryId)) {
-        setTripCategoryId(cats[0]?.id || '');
-      }
-      // eslint-disable-next-line
-    }, [selectedTripId, selectedTrip]);
     
     const [selectedDateMode, setSelectedDateMode] = useState('hoy');
     const [manualDate, setManualDate] = useState(() => {
@@ -316,6 +294,23 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
       const rate = txCurrency === settings.currency ? 1 : getNumericExchangeRate();
       const finalAmount = originalAmount * rate;
 
+      // Si hay un viaje activo y el usuario eligió imputar ahí, el movimiento va al viaje (no a la billetera normal)
+      if (activeTrip && imputeToTrip && (type === 'gasto' || type === 'ingreso')) {
+        setSavingTrip(true);
+        const tCat = (activeTrip.categories || []).find(c => c.id === tripCategoryId);
+        onAddTripTransaction(activeTrip.id, {
+          type: type === 'ingreso' ? 'ingreso' : 'gasto',
+          amount: finalAmount,
+          description: description || (tCat ? tCat.name : 'Movimiento del viaje'),
+          category: tripCategoryId || (activeTrip.categories && activeTrip.categories[0] ? activeTrip.categories[0].id : 'otros'),
+          date: getDateToSave()
+        }).then(() => {
+          setSavingTrip(false);
+          setActiveTab('trips');
+        }).catch(() => setSavingTrip(false));
+        return;
+      }
+
       if (type === 'ahorro') {
         if (targetGoalId === 'emergency') {
           setEmergencyFund(prev => ({ ...prev, current: prev.current + finalAmount }));
@@ -323,9 +318,6 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
           setSavingsGoals(savingsGoals.map(g => g.id === targetGoalId ? { ...g, current: Math.min(g.current + finalAmount, g.target) } : g));
         }
       }
-
-      const shouldImputeTrip = imputeTrip && selectedTrip && type !== 'ahorro';
-      const finalCategoryId = type === 'ahorro' ? 'ahorro' : (shouldImputeTrip ? tripCategoryId : categoryId);
 
       const newTransaction = {
         id: Date.now(),
@@ -335,26 +327,14 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
         originalCurrency: txCurrency,
         exchangeRate: rate,
         description: type === 'ahorro' ? (targetGoalId === 'emergency' ? 'Aporte Fondo de Emergencia' : `Aporte Meta: ${savingsGoals.find(g => g.id === targetGoalId)?.name || ''}`) : description,
-        category: finalCategoryId,
+        category: type === 'ahorro' ? 'ahorro' : categoryId,
         typeClassification: type === 'ahorro' ? 'otro' : typeClassification,
         methodId: type === 'gasto' ? methodId : null,
         bankId: type === 'ingreso' ? (destBankId || null) : null,
-        date: getDateToSave(),
-        tripId: shouldImputeTrip ? selectedTrip.id : null
+        date: getDateToSave()
       };
 
       setTransactions([newTransaction, ...transactions]);
-
-      if (shouldImputeTrip && onAddTripTransaction) {
-        onAddTripTransaction(selectedTrip.id, {
-          type: type === 'ingreso' ? 'aporte' : 'gasto',
-          amount: finalAmount,
-          description: description.trim() || (tripCategoriesList.find(c => c.id === tripCategoryId)?.name || 'Movimiento'),
-          category: tripCategoryId,
-          date: newTransaction.date
-        }).catch(() => {});
-      }
-
       setActiveTab('dashboard');
     };
 
@@ -429,6 +409,21 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
             </button>
           </div>
 
+          {activeTrip && (type === 'gasto' || type === 'ingreso') && (
+            <div className={`${isDarkMode ? 'bg-amber-950/40 border-amber-700/40' : 'bg-amber-50 border-amber-200'} border rounded-2xl p-3 flex items-center justify-between gap-2`}>
+              <div>
+                <p className={`text-xs font-bold ${isDarkMode ? 'text-amber-200' : 'text-amber-800'}`}>✈️ Imputar al Viaje ({activeTrip.name})</p>
+                <p className={`text-[10px] ${isDarkMode ? 'text-amber-200/70' : 'text-amber-700/80'}`}>Usa las categorías exclusivas del viaje</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={imputeToTrip}
+                onChange={e => setImputeToTrip(e.target.checked)}
+                className="w-5 h-5 accent-amber-600 shrink-0"
+              />
+            </div>
+          )}
+
           <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-6 shadow-sm border text-center`}>
             <div className="flex justify-between items-center mb-2">
               <label className={`text-sm font-medium ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Importe</label>
@@ -477,58 +472,6 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
             )}
           </div>
 
-          {authUser && availableTrips.length > 0 && type !== 'ahorro' && (
-            <div className={`rounded-2xl p-3.5 border transition-colors ${imputeTrip ? 'bg-amber-500/10 border-amber-500/30' : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100')}`}>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-lg shrink-0">✈️</span>
-                  <div className="min-w-0">
-                    <p className={`text-xs font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Imputar al Viaje</p>
-                    {imputeTrip && selectedTrip ? (
-                      <p className="text-[11px] font-semibold text-amber-500 truncate">{selectedTrip.name}</p>
-                    ) : (
-                      <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} truncate`}>Sumalo al historial compartido de un viaje</p>
-                    )}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setImputeTrip(!imputeTrip)}
-                  className={`shrink-0 w-11 h-6 rounded-full transition-colors relative ${imputeTrip ? 'bg-amber-500' : (isDarkMode ? 'bg-slate-700' : 'bg-gray-300')}`}
-                  aria-label="Imputar al viaje"
-                >
-                  <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-all ${imputeTrip ? 'left-5' : 'left-0.5'}`}></span>
-                </button>
-              </div>
-              {imputeTrip && (
-                <div className="mt-3 pt-3 border-t border-amber-500/20 space-y-2">
-                  {availableTrips.length > 1 && (
-                    <select
-                      value={selectedTripId}
-                      onChange={(e) => setSelectedTripId(e.target.value)}
-                      className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-2.5 text-xs font-bold outline-none`}
-                    >
-                      {availableTrips.map(t => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </select>
-                  )}
-                  {tripCategoriesList.length > 0 && (
-                    <select
-                      value={tripCategoryId}
-                      onChange={(e) => setTripCategoryId(e.target.value)}
-                      className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-2.5 text-xs font-bold uppercase outline-none`}
-                    >
-                      {tripCategoriesList.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
           <div className="space-y-4">
             <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border space-y-4`}>
               {type === 'ahorro' ? (
@@ -547,31 +490,36 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
                 </div>
               ) : (
                 <>
-                  <div>
-                    <label className={`block text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-1`}>Descripción</label>
-                    <input 
-                      type="text" 
-                      placeholder="Agregá un detalle breve sobre este movimiento..." 
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} border rounded-xl p-3 outline-none focus:border-blue-300 transition-colors text-sm font-medium`}
-                      required
-                    />
-                  </div>
+                  <input 
+                    type="text" 
+                    placeholder="Descripción (ej. Supermercado, Sueldo)" 
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} border rounded-xl p-3 outline-none focus:border-blue-300 transition-colors text-sm font-medium`}
+                    required
+                  />
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={`block text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-1`}>Categoría</label>
                       <select 
-                        value={categoryId}
-                        onChange={(e) => setCategoryId(e.target.value)}
+                        value={activeTrip && imputeToTrip ? tripCategoryId : categoryId}
+                        onChange={(e) => { if (activeTrip && imputeToTrip) setTripCategoryId(e.target.value); else setCategoryId(e.target.value); }}
                         className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} border rounded-xl p-2.5 text-sm outline-none capitalize focus:border-blue-300`}
                         required
                       >
-                        {availableCategories.length === 0 && <option value="" disabled>Sin categorías</option>}
-                        {availableCategories.map(c => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
+                        {activeTrip && imputeToTrip ? (
+                          (activeTrip.categories || []).map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))
+                        ) : (
+                          <>
+                            {availableCategories.length === 0 && <option value="" disabled>Sin categorías</option>}
+                            {availableCategories.map(c => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </>
+                        )}
                       </select>
                     </div>
                     <div>
@@ -602,62 +550,40 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
                   )}
               </div>
 
-              {type === 'ingreso' && (
+              {type !== 'ahorro' && (
                 <div>
                   <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>
-                    Cuenta Bancaria (Destino)
+                    {type === 'ingreso' ? 'Cuenta Bancaria (Destino)' : 'Medio de Pago / Tarjeta'}
                   </label>
                   <div className="relative">
-                    <select 
-                      value={destBankId}
-                      onChange={(e) => setDestBankId(e.target.value)}
-                      className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} border rounded-xl p-3 outline-none font-bold appearance-none focus:border-blue-300 transition-colors text-sm`}
-                    >
-                      <option value="">Efectivo / Sin Cuenta vinculada</option>
-                      {bankAccounts.map(b => (
-                        <option key={b.id} value={b.id}>{b.bankName} - {b.accountType}</option>
-                      ))}
-                    </select>
+                    {type === 'ingreso' ? (
+                      <select 
+                        value={destBankId}
+                        onChange={(e) => setDestBankId(e.target.value)}
+                        className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} border rounded-xl p-3 outline-none font-bold appearance-none focus:border-blue-300 transition-colors text-sm`}
+                      >
+                        <option value="">Efectivo / Sin Cuenta vinculada</option>
+                        {bankAccounts.map(b => (
+                          <option key={b.id} value={b.id}>{b.bankName} - {b.accountType}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <select 
+                        value={methodId}
+                        onChange={(e) => setMethodId(Number(e.target.value))}
+                        className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} border rounded-xl p-3 outline-none font-bold appearance-none focus:border-blue-300 transition-colors text-sm`}
+                        required
+                      >
+                        {paymentMethods.length === 0 && <option value="" disabled>Sin métodos agregados</option>}
+                        {paymentMethods.map(m => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                    )}
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                     </div>
                   </div>
-                </div>
-              )}
-              {type === 'gasto' && (
-                <div>
-                  <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>
-                    Medio de Pago
-                  </label>
-                  {paymentMethods.length === 0 ? (
-                    <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Todavía no agregaste ningún medio de pago.</p>
-                  ) : (
-                    <div className="flex gap-2.5 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1">
-                      {paymentMethods.map(m => {
-                        const isSelected = methodId === m.id;
-                        const shortLabel = { credit: 'Crédito', debit: 'Débito', cash: 'Efectivo', wallet: 'Billetera' }[m.type] || 'Medio';
-                        return (
-                          <button
-                            type="button"
-                            key={m.id}
-                            onClick={() => setMethodId(m.id)}
-                            className={`relative shrink-0 w-36 h-[88px] rounded-2xl p-3 text-left bg-gradient-to-br ${m.color || 'from-gray-500 to-gray-700'} text-white shadow-md transition-all ${isSelected ? 'ring-2 ring-white/90 scale-[1.03]' : 'opacity-70'}`}
-                          >
-                            <div className="flex justify-between items-start">
-                              <span className="text-[9px] font-black uppercase tracking-wider opacity-90">{shortLabel}</span>
-                              {isSelected && (
-                                <span className="w-4 h-4 rounded-full bg-white/90 text-emerald-600 flex items-center justify-center text-[10px] font-black">✓</span>
-                              )}
-                            </div>
-                            <p className="text-xs font-bold leading-tight mt-4 line-clamp-2">{m.name}</p>
-                            {m.limit ? (
-                              <p className="text-[9px] opacity-80 mt-0.5">Límite {new Intl.NumberFormat('es-AR', { notation: 'compact' }).format(m.limit)}</p>
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -665,24 +591,35 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
 
           <button 
             type="submit" 
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg py-4 rounded-2xl shadow-lg shadow-blue-500/30 transition-all active:scale-95 mt-4"
+            disabled={savingTrip}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg py-4 rounded-2xl shadow-lg shadow-blue-500/30 transition-all active:scale-95 mt-4 disabled:opacity-50"
           >
-            Guardar Movimiento
+            {savingTrip ? 'Guardando en el viaje...' : 'Guardar Movimiento'}
           </button>
         </form>
       </div>
     );
   };
 
-const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setActiveTab, onCreateTrip, onJoinTrip, onLeaveTrip, onDeleteTrip, onAddTripTransaction, onDeleteTripTransaction, onUpdateTrip }) => {
+const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, activeTripId, setActiveTab, onCreateTrip, onJoinTrip, onLeaveTrip, onDeleteTrip, onAddTripTransaction, onDeleteTripTransaction, onUpdateTrip, onSetActiveTrip }) => {
   const [mode, setMode] = useState('list'); // 'list' | 'create' | 'detail'
   const [viewingTripId, setViewingTripId] = useState(null);
+  const [editingTripId, setEditingTripId] = useState(null);
 
   const [tripName, setTripName] = useState('');
   const [tripStart, setTripStart] = useState('');
   const [tripEnd, setTripEnd] = useState('');
   const [tripBudgetInput, setTripBudgetInput] = useState('');
-  const [tripCatsDraft, setTripCatsDraft] = useState('Alojamiento, Comida, Transporte, Excursiones');
+  const [tripControlMode, setTripControlMode] = useState('ahorro'); // 'ahorro' (fondo/saldo ahorrado) | 'presupuesto' (tope de gasto)
+  const [tripDescription, setTripDescription] = useState('');
+  const [tripCats, setTripCats] = useState([
+    { id: 'alojamiento', name: 'Alojamiento', estimated: 0 },
+    { id: 'comida', name: 'Comida', estimated: 0 },
+    { id: 'transporte', name: 'Transporte', estimated: 0 },
+    { id: 'excursiones', name: 'Excursiones', estimated: 0 }
+  ]);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatEst, setNewCatEst] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
 
@@ -697,6 +634,31 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
   const [txBusy, setTxBusy] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState('');
+
+  const resetForm = () => {
+    setEditingTripId(null);
+    setTripName(''); setTripStart(''); setTripEnd(''); setTripBudgetInput('');
+    setTripControlMode('ahorro'); setTripDescription('');
+    setTripCats([
+      { id: 'alojamiento', name: 'Alojamiento', estimated: 0 },
+      { id: 'comida', name: 'Comida', estimated: 0 },
+      { id: 'transporte', name: 'Transporte', estimated: 0 },
+      { id: 'excursiones', name: 'Excursiones', estimated: 0 }
+    ]);
+    setNewCatName(''); setNewCatEst(''); setCreateError('');
+  };
+
+  const loadTripIntoForm = (t) => {
+    setEditingTripId(t.id);
+    setTripName(t.name || '');
+    setTripStart(t.startDate || '');
+    setTripEnd(t.endDate || '');
+    setTripBudgetInput(t.budget ? String(t.budget).replace('.', ',') : '');
+    setTripControlMode(t.controlMode === 'presupuesto' ? 'presupuesto' : 'ahorro');
+    setTripDescription(t.description || '');
+    setTripCats((t.categories && t.categories.length > 0) ? t.categories.map(c => ({ ...c })) : []);
+    setNewCatName(''); setNewCatEst(''); setCreateError('');
+  };
 
   const parseAmt = (str) => {
     if (!str) return 0;
@@ -767,7 +729,7 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
       setTxBusy(true);
       try {
         await onAddTripTransaction(trip.id, {
-          type: txType === 'aporte' ? 'aporte' : 'gasto',
+          type: txType === 'aporte' ? 'ingreso' : 'gasto',
           amount: amt,
           description: txDescription.trim() || (txType === 'aporte' ? 'Aporte al fondo' : (tripCategories.find(c => c.id === txCategoryId)?.name || 'Gasto')),
           category: txCategoryId || (tripCategories[0]?.id || 'otros'),
@@ -791,14 +753,32 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
       }
     };
 
+    const isActive = activeTripId === trip.id;
+
     return (
       <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-right-4 duration-300`}>
         <div className="flex items-center gap-3 mb-4 mt-2">
           <button onClick={() => { setMode('list'); setViewingTripId(null); }} className={`${isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-gray-100 text-gray-800'} p-2 rounded-full shadow-sm`}>
             <ArrowLeftIcon />
           </button>
-          <h1 className={`text-xl font-bold truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{trip.name}</h1>
+          <h1 className={`text-xl font-bold truncate flex-1 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{trip.name}</h1>
+          {isOwner && (
+            <button onClick={() => { loadTripIntoForm(trip); setMode('create'); }} className={`${isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-gray-100 text-gray-800'} p-2 rounded-full shadow-sm shrink-0`}>
+              <EditIcon />
+            </button>
+          )}
         </div>
+
+        <button
+          onClick={() => onSetActiveTrip(isActive ? null : trip.id)}
+          className={`w-full mb-4 py-2.5 rounded-xl text-xs font-bold transition-colors ${isActive ? (isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-gray-100 text-gray-700') : 'bg-amber-500 text-white shadow-md'}`}
+        >
+          {isActive ? '✈️ Viaje activo — Desactivar' : 'Activar este viaje (para imputar gastos rápido desde Nuevo Movimiento)'}
+        </button>
+
+        {trip.description && (
+          <p className={`text-xs mb-4 -mt-2 ${labelCls}`}>{trip.description}</p>
+        )}
 
         <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-3xl p-6 text-white shadow-lg mb-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 rounded-full bg-white opacity-10"></div>
@@ -835,6 +815,40 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
             </div>
           )}
         </div>
+
+        {tripCategories.length > 0 && (
+          <div className="mb-6">
+            <h3 className={`text-sm font-bold uppercase tracking-wider mb-3 ${labelCls}`}>Gastos por categoría</h3>
+            <div className="space-y-2.5">
+              {tripCategories.map(cat => {
+                const catSpent = tripTxs.filter(t => t.category === cat.id && t.type === 'gasto').reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+                const estimated = parseFloat(cat.estimated || 0);
+                const avance = estimated > 0 ? Math.min(Math.round((catSpent / estimated) * 100), 100) : 0;
+                return (
+                  <div key={cat.id} className={`${cardCls} p-3.5 rounded-2xl shadow-sm border space-y-1.5`}>
+                    <div className="flex justify-between items-center">
+                      <span className={`text-xs font-bold uppercase ${isDarkMode ? 'text-amber-300' : 'text-amber-700'}`}>{cat.name}</span>
+                      {estimated > 0 && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-amber-950 text-amber-300' : 'bg-amber-100 text-amber-800'}`}>
+                          {avance}%
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      {estimated > 0 ? <span className={labelCls}>Estimado: {formatMoney(estimated)}</span> : <span className={labelCls}>Sin estimado</span>}
+                      <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Gastado: {formatMoney(catSpent)}</span>
+                    </div>
+                    {estimated > 0 && (
+                      <div className={`w-full ${isDarkMode ? 'bg-slate-800' : 'bg-gray-100'} h-1.5 rounded-full overflow-hidden`}>
+                        <div className={`h-full rounded-full ${avance >= 90 ? 'bg-red-500' : 'bg-amber-500'}`} style={{ width: `${avance}%` }}></div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className={`${cardCls} rounded-2xl p-4 shadow-sm border mb-6`}>
           <div className="flex items-center gap-2 mb-2">
@@ -966,20 +980,30 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
     );
   }
 
-  // ---- Vista Crear Viaje ----
+  // ---- Vista Crear/Editar Viaje ----
   if (mode === 'create') {
     const handleSubmitCreate = async (e) => {
       e.preventDefault();
       if (!tripName.trim()) return;
       setCreating(true); setCreateError('');
       try {
-        const cats = tripCatsDraft.split(',').map(s => s.trim()).filter(Boolean).map((name, i) => ({ id: `tc_${i}_${Date.now()}`, name }));
-        const code = await onCreateTrip({ name: tripName, startDate: tripStart, endDate: tripEnd, budget: parseAmt(tripBudgetInput), categories: cats });
-        setTripName(''); setTripStart(''); setTripEnd(''); setTripBudgetInput(''); setTripCatsDraft('Alojamiento, Comida, Transporte, Excursiones');
+        const payload = {
+          name: tripName, startDate: tripStart, endDate: tripEnd,
+          budget: parseAmt(tripBudgetInput), categories: tripCats,
+          controlMode: tripControlMode, description: tripDescription
+        };
+        let code;
+        if (editingTripId) {
+          await onUpdateTrip(editingTripId, payload);
+          code = editingTripId;
+        } else {
+          code = await onCreateTrip(payload);
+        }
+        resetForm();
         setViewingTripId(code);
         setMode('detail');
       } catch (err) {
-        setCreateError('No se pudo crear el viaje. Probá de nuevo.');
+        setCreateError('No se pudo guardar el viaje. Probá de nuevo.');
       }
       setCreating(false);
     };
@@ -987,15 +1011,19 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
     return (
       <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-right-4 duration-300`}>
         <div className="flex items-center gap-3 mb-6 mt-2">
-          <button onClick={() => setMode('list')} className={`${isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-gray-100 text-gray-800'} p-2 rounded-full shadow-sm`}>
+          <button onClick={() => { resetForm(); setMode('list'); }} className={`${isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-gray-100 text-gray-800'} p-2 rounded-full shadow-sm`}>
             <ArrowLeftIcon />
           </button>
-          <h1 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Nuevo Viaje</h1>
+          <h1 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{editingTripId ? 'Editar Viaje' : 'Nuevo Viaje'}</h1>
         </div>
         <form onSubmit={handleSubmitCreate} className={`${cardCls} rounded-3xl p-5 shadow-sm border space-y-4`}>
           <div>
             <label className={`block text-[10px] font-bold uppercase mb-1 ${labelCls}`}>Nombre del viaje</label>
             <input type="text" value={tripName} onChange={e => setTripName(e.target.value)} placeholder="Ej. Viaje a Brasil" className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm font-bold`} required />
+          </div>
+          <div>
+            <label className={`block text-[10px] font-bold uppercase mb-1 ${labelCls}`}>Descripción (opcional)</label>
+            <input type="text" value={tripDescription} onChange={e => setTripDescription(e.target.value)} placeholder="Ej. Vacaciones de verano con amigos" className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm`} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -1007,17 +1035,77 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
               <input type="date" value={tripEnd} onChange={e => setTripEnd(e.target.value)} className={`w-full ${inputCls} border rounded-xl p-2.5 outline-none text-sm`} />
             </div>
           </div>
-          <div>
-            <label className={`block text-[10px] font-bold uppercase mb-1 ${labelCls}`}>Presupuesto objetivo</label>
-            <input type="text" inputMode="decimal" value={tripBudgetInput} onChange={e => setTripBudgetInput(formatAmtInput(e.target.value))} placeholder="Ej. 2.500.000" className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm font-bold`} />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={`block text-[10px] font-bold uppercase mb-1 ${labelCls}`}>Presupuesto objetivo</label>
+              <input type="text" inputMode="decimal" value={tripBudgetInput} onChange={e => setTripBudgetInput(formatAmtInput(e.target.value))} placeholder="Ej. 2.500.000" className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm font-bold`} />
+            </div>
+            <div>
+              <label className={`block text-[10px] font-bold uppercase mb-1 ${labelCls}`}>Modo de control</label>
+              <select value={tripControlMode} onChange={e => setTripControlMode(e.target.value)} className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm font-bold`}>
+                <option value="ahorro">Saldo ahorrado</option>
+                <option value="presupuesto">Presupuesto objetivo</option>
+              </select>
+            </div>
           </div>
-          <div>
-            <label className={`block text-[10px] font-bold uppercase mb-1 ${labelCls}`}>Categorías del viaje (separadas por coma)</label>
-            <input type="text" value={tripCatsDraft} onChange={e => setTripCatsDraft(e.target.value)} className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm`} />
+
+          <div className={`pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-gray-100'}`}>
+            <label className={`block text-xs font-bold uppercase mb-2 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Categorías exclusivas del viaje</label>
+            <div className="space-y-2 mb-3">
+              {tripCats.map((tc, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    value={tc.name}
+                    onChange={e => setTripCats(tripCats.map((c, i) => i === idx ? { ...c, name: e.target.value } : c))}
+                    className={`flex-1 ${inputCls} border rounded-xl p-2 text-xs font-bold outline-none`}
+                  />
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="Estimado ($)"
+                    value={tc.estimated ? String(tc.estimated) : ''}
+                    onChange={e => setTripCats(tripCats.map((c, i) => i === idx ? { ...c, estimated: parseAmt(e.target.value) } : c))}
+                    className={`w-28 ${inputCls} border rounded-xl p-2 text-xs font-bold outline-none`}
+                  />
+                  <button type="button" onClick={() => setTripCats(tripCats.filter((_, i) => i !== idx))} className="text-gray-400 hover:text-red-500 p-1"><TrashIcon /></button>
+                </div>
+              ))}
+              {tripCats.length === 0 && <p className={`text-xs ${labelCls}`}>Todavía no agregaste categorías.</p>}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Nueva categoría (ej. Excursiones)"
+                value={newCatName}
+                onChange={e => setNewCatName(e.target.value)}
+                className={`flex-1 ${inputCls} border rounded-xl p-2.5 text-xs font-bold outline-none`}
+              />
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="Estimado"
+                value={newCatEst}
+                onChange={e => setNewCatEst(e.target.value)}
+                className={`w-24 ${inputCls} border rounded-xl p-2.5 text-xs font-bold outline-none`}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!newCatName.trim()) return;
+                  setTripCats([...tripCats, { id: `tc_${Date.now()}`, name: newCatName.trim(), estimated: parseAmt(newCatEst) }]);
+                  setNewCatName(''); setNewCatEst('');
+                }}
+                className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-xl text-xs font-bold"
+              >
+                +
+              </button>
+            </div>
           </div>
+
           {createError && <p className="text-xs text-red-500 font-medium bg-red-500/10 border border-red-500/20 rounded-xl p-2">{createError}</p>}
           <button type="submit" disabled={creating} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-xl text-sm shadow-md transition-colors disabled:opacity-50">
-            {creating ? 'Creando...' : 'Crear viaje'}
+            {creating ? 'Guardando...' : (editingTripId ? 'Guardar cambios' : 'Crear viaje')}
           </button>
         </form>
       </div>
@@ -1029,7 +1117,7 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
     <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-right-4 duration-300`}>
       <div className="flex justify-between items-center mb-2 mt-2">
         <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>✈️ Modo Viaje</h1>
-        <button onClick={() => setMode('create')} className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md transition-colors">
+        <button onClick={() => { resetForm(); setMode('create'); }} className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md transition-colors">
           + Crear Viaje
         </button>
       </div>
@@ -1046,26 +1134,48 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
             const spent = txs.filter(tx => tx.type === 'gasto').reduce((s, tx) => s + parseFloat(tx.amount || 0), 0);
             const budget = parseFloat(t.budget || 0);
             const pct = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
+            const isActive = activeTripId === t.id;
             return (
-              <div key={t.id} onClick={() => { setViewingTripId(t.id); setMode('detail'); }} className={`${isDarkMode ? 'bg-slate-900 border-amber-600/30' : 'bg-white border-amber-200'} rounded-3xl p-5 shadow-sm border space-y-2 cursor-pointer hover:shadow-md transition-all active:scale-[0.99]`}>
-                <div className="flex justify-between items-start">
-                  <div className="min-w-0">
-                    <h3 className={`text-base font-bold truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.name}</h3>
-                    {(t.startDate || t.endDate) && <p className={`text-xs mt-0.5 ${labelCls}`}>📅 {t.startDate || '?'} al {t.endDate || '?'}</p>}
+              <div key={t.id} className={`${isDarkMode ? 'bg-slate-900 border-amber-600/30' : 'bg-white border-amber-200'} rounded-3xl p-5 shadow-sm border space-y-2 hover:shadow-md transition-all`}>
+                <div onClick={() => { setViewingTripId(t.id); setMode('detail'); }} className="cursor-pointer active:scale-[0.99] transition-transform">
+                  <div className="flex justify-between items-start">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className={`text-base font-bold truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.name}</h3>
+                        {isActive && <span className="text-[9px] font-black bg-amber-500 text-white px-1.5 py-0.5 rounded-full shrink-0">ACTIVO</span>}
+                      </div>
+                      {(t.startDate || t.endDate) && <p className={`text-xs mt-0.5 ${labelCls}`}>📅 {t.startDate || '?'} al {t.endDate || '?'}</p>}
+                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-gray-100 text-gray-600'}`}>
+                      {(t.members || []).length} {(t.members || []).length === 1 ? 'persona' : 'personas'}
+                    </span>
                   </div>
-                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-gray-100 text-gray-600'}`}>
-                    {(t.members || []).length} {(t.members || []).length === 1 ? 'persona' : 'personas'}
-                  </span>
-                </div>
-                <div className="flex justify-between text-xs font-semibold">
-                  <span className={labelCls}>Gastado: <span className={isDarkMode ? 'text-white' : 'text-gray-800'}>{formatMoney(spent)}</span></span>
-                  {budget > 0 && <span className={labelCls}>{pct.toFixed(0)}%</span>}
-                </div>
-                {budget > 0 && (
-                  <div className={`w-full ${isDarkMode ? 'bg-slate-800' : 'bg-gray-100'} h-2 rounded-full overflow-hidden`}>
-                    <div className={`h-full rounded-full ${pct >= 90 ? 'bg-red-500' : 'bg-amber-500'}`} style={{ width: `${pct}%` }}></div>
+                  <div className="flex justify-between text-xs font-semibold mt-2">
+                    <span className={labelCls}>Gastado: <span className={isDarkMode ? 'text-white' : 'text-gray-800'}>{formatMoney(spent)}</span></span>
+                    {budget > 0 && <span className={labelCls}>{pct.toFixed(0)}%</span>}
                   </div>
-                )}
+                  {budget > 0 && (
+                    <div className={`w-full ${isDarkMode ? 'bg-slate-800' : 'bg-gray-100'} h-2 rounded-full overflow-hidden mt-1`}>
+                      <div className={`h-full rounded-full ${pct >= 90 ? 'bg-red-500' : 'bg-amber-500'}`} style={{ width: `${pct}%` }}></div>
+                    </div>
+                  )}
+                </div>
+                <div className={`flex gap-2 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-gray-100'}`}>
+                  <button
+                    onClick={() => onSetActiveTrip(isActive ? null : t.id)}
+                    className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold ${isActive ? (isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-gray-100 text-gray-700') : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'}`}
+                  >
+                    {isActive ? 'Desactivar' : 'Activar viaje'}
+                  </button>
+                  {t.ownerUid === authUser.uid && (
+                    <button
+                      onClick={() => { loadTripIntoForm(t); setMode('create'); }}
+                      className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-gray-100 text-gray-700'}`}
+                    >
+                      Editar
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })
@@ -1123,6 +1233,7 @@ function ExpenseTrackerApp() {
 
   // --- Modo Viaje (fondos compartidos por viaje, invitando a otras cuentas) ---
   const [tripIds, setTripIds] = useState([]); // viajes de los que soy miembro (propios o a los que me uní)
+  const [activeTripId, setActiveTripIdState] = useState(null); // viaje "activo": los nuevos movimientos se imputan ahí por defecto
   const [tripsCheckDone, setTripsCheckDone] = useState(false);
   const [trips, setTrips] = useState([]); // documentos completos de cada viaje (metadata + transacciones del viaje)
   const tripUnsubscribersRef = useRef({});
@@ -1308,6 +1419,7 @@ function ExpenseTrackerApp() {
     const unsubscribe = db.collection('users').doc(authUser.uid).onSnapshot((snap) => {
       const data = snap.exists ? (snap.data() || {}) : {};
       setTripIds(data.tripIds || []);
+      setActiveTripIdState(data.activeTripId || null);
       setTripsCheckDone(true);
     }, () => setTripsCheckDone(true));
     return () => unsubscribe();
@@ -1519,7 +1631,7 @@ function ExpenseTrackerApp() {
   };
 
   // --- Modo Viaje (fondo + gastos compartidos por viaje, con invitación a otras cuentas) ---
-  const handleCreateTrip = async ({ name, startDate, endDate, budget, categories: tripCategories }) => {
+  const handleCreateTrip = async ({ name, startDate, endDate, budget, categories: tripCategories, controlMode, description }) => {
     if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) throw { code: 'firebase-no-config' };
     const db = firebase.firestore();
     const code = `${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-2)}`.toUpperCase();
@@ -1528,12 +1640,14 @@ function ExpenseTrackerApp() {
       startDate: startDate || null,
       endDate: endDate || null,
       budget: parseFloat(budget) || 0,
+      controlMode: controlMode === 'presupuesto' ? 'presupuesto' : 'ahorro',
+      description: (description || '').trim(),
       categories: tripCategories && tripCategories.length > 0 ? tripCategories : [
-        { id: 'alojamiento', name: 'Alojamiento' },
-        { id: 'comida', name: 'Comida' },
-        { id: 'transporte', name: 'Transporte' },
-        { id: 'excursiones', name: 'Excursiones' },
-        { id: 'otros', name: 'Otros' }
+        { id: 'alojamiento', name: 'Alojamiento', estimated: 0 },
+        { id: 'comida', name: 'Comida', estimated: 0 },
+        { id: 'transporte', name: 'Transporte', estimated: 0 },
+        { id: 'excursiones', name: 'Excursiones', estimated: 0 },
+        { id: 'otros', name: 'Otros', estimated: 0 }
       ],
       ownerUid: authUser.uid,
       members: [authUser.uid],
@@ -1554,10 +1668,8 @@ function ExpenseTrackerApp() {
     const code = (codeInput || '').trim().toUpperCase();
     if (!code) throw { code: 'invalid-code' };
     const tripRef = db.collection('trips').doc(code);
-    // No hacemos un get() previo: las reglas de Firestore solo dejan LEER el viaje a quien
-    // ya es miembro, así que alguien uniéndose por primera vez no tiene permiso para leerlo
-    // todavía (eso rompía el "unirme" con un falso "código inválido"). Vamos directo al
-    // update, que sí está permitido para que un no-miembro se agregue a sí mismo.
+    const snap = await tripRef.get();
+    if (!snap.exists) throw { code: 'invalid-code' };
     try {
       await tripRef.update({
         members: firebase.firestore.FieldValue.arrayUnion(authUser.uid),
@@ -1577,8 +1689,10 @@ function ExpenseTrackerApp() {
     if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length || !tripId) return;
     const db = firebase.firestore();
     await db.collection('users').doc(authUser.uid).set({
-      tripIds: firebase.firestore.FieldValue.arrayRemove(tripId)
+      tripIds: firebase.firestore.FieldValue.arrayRemove(tripId),
+      ...(activeTripId === tripId ? { activeTripId: firebase.firestore.FieldValue.delete() } : {})
     }, { merge: true });
+    if (activeTripId === tripId) setActiveTripIdState(null);
     try {
       await db.collection('trips').doc(tripId).update({
         members: firebase.firestore.FieldValue.arrayRemove(authUser.uid),
@@ -1599,6 +1713,7 @@ function ExpenseTrackerApp() {
       }, { merge: true }).catch(() => {})
     ));
     await db.collection('trips').doc(tripId).delete();
+    if (activeTripId === tripId) handleSetActiveTrip(null);
   };
 
   const handleAddTripTransaction = async (tripId, tx) => {
@@ -1637,6 +1752,22 @@ function ExpenseTrackerApp() {
     const db = firebase.firestore();
     await db.collection('trips').doc(tripId).set({ ...updates, updatedAt: Date.now() }, { merge: true });
   };
+
+  const handleSetActiveTrip = async (tripId) => {
+    setActiveTripIdState(tripId || null);
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) return;
+    const db = firebase.firestore();
+    if (tripId) {
+      await db.collection('users').doc(authUser.uid).set({ activeTripId: tripId }, { merge: true });
+    } else {
+      await db.collection('users').doc(authUser.uid).set({ activeTripId: firebase.firestore.FieldValue.delete() }, { merge: true });
+    }
+  };
+
+  const activeTrip = useMemo(() => {
+    if (!activeTripId) return null;
+    return trips.find(t => t.id === activeTripId) || null;
+  }, [trips, activeTripId]);
 
   // Gemini AI Assistant Handler
   // Llama a la API de Gemini reintentando automáticamente si el modelo está sobrecargado (503 / "alta demanda")
@@ -2409,6 +2540,60 @@ function ExpenseTrackerApp() {
             </button>
           </div>
         </div>
+
+        {activeTrip && (() => {
+          const tripTxs = activeTrip.transactions || [];
+          const totalSpent = tripTxs.filter(t => t.type === 'gasto').reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+          const totalAportado = tripTxs.filter(t => t.type === 'ingreso').reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+          const disponible = totalAportado - totalSpent;
+          const budget = parseFloat(activeTrip.budget || 0);
+          const usagePercent = budget > 0 ? Math.min((totalSpent / budget) * 100, 100) : 0;
+          let barColor = 'bg-white';
+          if (usagePercent >= 100) barColor = 'bg-red-300';
+          else if (usagePercent >= 80) barColor = 'bg-yellow-200';
+          return (
+            <div
+              onClick={() => setActiveTab('trips')}
+              className={`rounded-3xl p-5 ${isDarkMode ? 'bg-gradient-to-r from-amber-800 to-yellow-900 border border-amber-700/60 text-amber-100' : 'bg-gradient-to-r from-amber-500 to-yellow-500 border border-amber-300 text-slate-950'} shadow-lg relative overflow-hidden cursor-pointer`}
+            >
+              <div className="absolute top-0 right-0 -mr-6 -mt-6 w-28 h-28 rounded-full bg-white opacity-20"></div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">✈️</span>
+                  <span className={`text-xs font-black tracking-widest uppercase ${isDarkMode ? 'bg-black/30 text-amber-200' : 'bg-black/10 text-slate-950'} px-2.5 py-0.5 rounded-full`}>Modo Viaje Activo</span>
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleSetActiveTrip(null); }}
+                  className={`text-[10px] font-bold px-2 py-1 rounded-full ${isDarkMode ? 'bg-black/30 text-amber-200' : 'bg-black/10 text-slate-950'}`}
+                >
+                  Desactivar
+                </button>
+              </div>
+              <h2 className="text-2xl font-black tracking-tight">{activeTrip.name}</h2>
+              {(activeTrip.startDate || activeTrip.endDate) && (
+                <p className="text-xs font-bold opacity-90 mt-0.5">{activeTrip.startDate || '?'} - {activeTrip.endDate || '?'}</p>
+              )}
+              <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-black/10 text-xs">
+                <div>
+                  <p className="opacity-70 uppercase text-[10px]">Gastado</p>
+                  <p className="font-black text-lg">{formatCurrency(totalSpent)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="opacity-70 uppercase text-[10px]">Disponible</p>
+                  <p className="font-black text-lg">{formatCurrency(disponible)}</p>
+                </div>
+              </div>
+              {budget > 0 && (
+                <>
+                  <div className="w-full bg-black/20 h-2 rounded-full overflow-hidden mt-3">
+                    <div className={`h-full rounded-full ${barColor}`} style={{ width: `${usagePercent}%` }}></div>
+                  </div>
+                  <p className="text-[10px] font-bold mt-1 opacity-90">{usagePercent.toFixed(0)}% del presupuesto utilizado</p>
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         {aiChatOpen && (
           <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200'} rounded-3xl p-4 shadow-xl border mb-6 animate-in zoom-in-95 duration-200`}>
@@ -4197,8 +4382,7 @@ function ExpenseTrackerApp() {
               startVoiceDictation={startVoiceDictation}
               isScanning={isScanning}
               isListening={isListening}
-              authUser={authUser}
-              trips={trips}
+              activeTrip={activeTrip}
               onAddTripTransaction={handleAddTripTransaction}
             />
           )}
@@ -4210,6 +4394,7 @@ function ExpenseTrackerApp() {
               authUser={authUser}
               trips={trips}
               tripsCheckDone={tripsCheckDone}
+              activeTripId={activeTripId}
               setActiveTab={setActiveTab}
               onCreateTrip={handleCreateTrip}
               onJoinTrip={handleJoinTrip}
@@ -4218,6 +4403,7 @@ function ExpenseTrackerApp() {
               onAddTripTransaction={handleAddTripTransaction}
               onDeleteTripTransaction={handleDeleteTripTransaction}
               onUpdateTrip={handleUpdateTrip}
+              onSetActiveTrip={handleSetActiveTrip}
             />
           )}
           {activeTab === 'settings' && <SettingsView />}

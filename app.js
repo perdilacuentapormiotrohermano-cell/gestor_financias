@@ -1301,7 +1301,7 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
 
 function ExpenseTrackerApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [subTab, setSubTab] = useState('historial');
+  const [subTab, setSubTab] = useState('menu');
   const [transactions, setTransactions] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
   
@@ -2691,6 +2691,7 @@ function ExpenseTrackerApp() {
           </div>
         )}
 
+        {!activeTrip && (
         <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-6 text-white shadow-lg shadow-blue-500/20 relative overflow-hidden">
           <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 rounded-full bg-white opacity-10"></div>
           <p className="text-blue-100 text-sm font-medium mb-1">Balance Total (Ingresos - Gastos)</p>
@@ -2712,6 +2713,7 @@ function ExpenseTrackerApp() {
             </div>
           </div>
         </div>
+        )}
 
         {activeTrip && (
           <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-3xl p-5 text-white shadow-lg relative overflow-hidden">
@@ -3257,49 +3259,47 @@ function ExpenseTrackerApp() {
       });
     }, [transactions, filterPeriod, filterCategory, filterType, selectedMonth]);
 
-    return (
-      <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-left-4 duration-300`}>
-        <div className="flex justify-between items-center mb-4 mt-2">
-          <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Registro</h1>
+    if (subTab === 'menu') {
+      const menuItems = [
+        { id: 'historial', label: 'Historial General', icon: <ListIcon active={true} />, color: 'text-blue-500 bg-blue-500/10' },
+        { id: 'habituales', label: 'Pagos Habituales', icon: <TrendingUpIcon />, color: 'text-green-500 bg-green-500/10' },
+        { id: 'cuotas', label: 'Seguimiento Cuotas', icon: <TargetIcon />, color: 'text-purple-500 bg-purple-500/10' },
+        { id: 'presupuestos', label: 'Presupuestos', icon: <ShieldIcon />, color: 'text-teal-500 bg-teal-500/10' },
+        { id: 'categorias', label: 'Categorías', icon: <SettingsIcon active={true} />, color: 'text-blue-500 bg-blue-500/10' },
+        { id: 'viajes', label: 'Modo Viaje', icon: <PlaneIcon />, color: 'text-orange-500 bg-orange-500/10' }
+      ];
+      return (
+        <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-left-4 duration-300`}>
+          <div className="flex justify-between items-center mb-4 mt-2">
+            <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Registro</h1>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            {menuItems.map(item => (
+              <button
+                key={item.id}
+                onClick={() => setSubTab(item.id)}
+                className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} border rounded-3xl p-6 shadow-sm flex flex-col items-center justify-center gap-3 text-center hover:shadow-md active:scale-[0.97] transition-all`}
+              >
+                <div className={`w-14 h-14 rounded-full flex items-center justify-center ${item.color}`}>
+                  {item.icon}
+                </div>
+                <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{item.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
+      );
+    }
 
-        <div className={`${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-gray-200/70 text-gray-500'} p-1 rounded-2xl flex w-full mb-6 overflow-x-auto no-scrollbar`}>
-          <button 
-            onClick={() => setSubTab('historial')}
-            className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'historial' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
-          >
-            Historial
+    return (
+      <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-right-4 duration-300`}>
+        <div className="flex items-center gap-3 mb-6 mt-2">
+          <button onClick={() => setSubTab('menu')} className={`${isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-gray-100 text-gray-800'} p-2 rounded-full shadow-sm`}>
+            <ArrowLeftIcon />
           </button>
-          <button 
-            onClick={() => setSubTab('habituales')}
-            className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'habituales' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
-          >
-            Pagos Habituales
-          </button>
-          <button 
-            onClick={() => setSubTab('cuotas')}
-            className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'cuotas' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
-          >
-            Seguimiento Cuotas
-          </button>
-          <button 
-            onClick={() => setSubTab('presupuestos')}
-            className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'presupuestos' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
-          >
-            Presupuestos
-          </button>
-          <button 
-            onClick={() => setSubTab('categorias')}
-            className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'categorias' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
-          >
-            Categorías
-          </button>
-          <button 
-            onClick={() => setSubTab('viajes')}
-            className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'viajes' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
-          >
-            Modo Viaje
-          </button>
+          <h1 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+            {{ historial: 'Historial General', habituales: 'Pagos Habituales', cuotas: 'Seguimiento Cuotas', presupuestos: 'Presupuestos', categorias: 'Categorías', viajes: 'Modo Viaje' }[subTab]}
+          </h1>
         </div>
 
         {subTab === 'historial' && (

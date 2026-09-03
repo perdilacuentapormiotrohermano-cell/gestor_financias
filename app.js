@@ -188,6 +188,7 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
     const [categoryId, setCategoryId] = useState(availableCategories.length > 0 ? availableCategories[0].id : '');
     const [typeClassification, setTypeClassification] = useState(typesList.length > 0 ? typesList[0].id : 'diario');
     const [methodId, setMethodId] = useState(paymentMethods.length > 0 ? paymentMethods[0].id : '');
+    const [transferDestId, setTransferDestId] = useState(paymentMethods.length > 1 ? paymentMethods[1].id : '');
     const [destBankId, setDestBankId] = useState('');
     const [targetGoalId, setTargetGoalId] = useState('emergency');
 
@@ -314,6 +315,10 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
       const originalAmount = getNumericAmount();
       if (originalAmount <= 0) return;
 
+      if (type === 'transferencia') {
+        if (!methodId || !transferDestId || methodId === transferDestId) return;
+      }
+
       const rate = txCurrency === settings.currency ? 1 : getNumericExchangeRate();
       const finalAmount = originalAmount * rate;
 
@@ -325,8 +330,8 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
         }
       }
 
-      const shouldImputeTrip = imputeTrip && selectedTrip && type !== 'ahorro';
-      const finalCategoryId = type === 'ahorro' ? 'ahorro' : (shouldImputeTrip ? tripCategoryId : categoryId);
+      const shouldImputeTrip = imputeTrip && selectedTrip && type !== 'ahorro' && type !== 'transferencia';
+      const finalCategoryId = type === 'ahorro' ? 'ahorro' : type === 'transferencia' ? 'transferencia' : (shouldImputeTrip ? tripCategoryId : categoryId);
 
       const newTransaction = {
         id: Date.now(),
@@ -335,10 +340,11 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
         originalAmount: originalAmount,
         originalCurrency: txCurrency,
         exchangeRate: rate,
-        description: type === 'ahorro' ? (targetGoalId === 'emergency' ? 'Aporte Fondo de Emergencia' : `Aporte Meta: ${savingsGoals.find(g => g.id === targetGoalId)?.name || ''}`) : description,
+        description: type === 'ahorro' ? (targetGoalId === 'emergency' ? 'Aporte Fondo de Emergencia' : `Aporte Meta: ${savingsGoals.find(g => g.id === targetGoalId)?.name || ''}`) : (type === 'transferencia' ? (description.trim() || 'Transferencia entre cuentas') : description),
         category: finalCategoryId,
-        typeClassification: type === 'ahorro' ? 'otro' : typeClassification,
-        methodId: (type === 'gasto' || type === 'ingreso') ? (methodId || null) : null,
+        typeClassification: type === 'ahorro' ? 'otro' : type === 'transferencia' ? 'transferencia' : typeClassification,
+        methodId: (type === 'gasto' || type === 'ingreso' || type === 'transferencia') ? (methodId || null) : null,
+        destMethodId: type === 'transferencia' ? (transferDestId || null) : null,
         bankId: null,
         date: getDateToSave(),
         tripId: shouldImputeTrip ? selectedTrip.id : null
@@ -428,6 +434,13 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
             >
               🎯 Ahorro
             </button>
+            <button 
+              type="button" 
+              onClick={() => setType('transferencia')}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${type === 'transferencia' ? (isDarkMode ? 'bg-slate-800 text-sky-400 font-bold shadow-sm' : 'bg-white text-sky-600 font-bold shadow-sm') : ''}`}
+            >
+              ⇄ Transf.
+            </button>
           </div>
 
           <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-6 shadow-sm border text-center`}>
@@ -478,7 +491,7 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
             )}
           </div>
 
-          {authUser && availableTrips.length > 0 && type !== 'ahorro' && (
+          {authUser && availableTrips.length > 0 && type !== 'ahorro' && type !== 'transferencia' && (
             <div className={`rounded-2xl p-3.5 border transition-colors ${imputeTrip ? 'bg-amber-500/10 border-amber-500/30' : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100')}`}>
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 min-w-0">
@@ -575,6 +588,100 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
                 </div>
               )}
 
+              {type === 'transferencia' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>
+                      Cuenta de Origen
+                    </label>
+                    {paymentMethods.length === 0 ? (
+                      <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Todavía no agregaste ninguna cuenta o tarjeta.</p>
+                    ) : (
+                      <div className="flex gap-2.5 overflow-x-auto snap-x snap-mandatory no-scrollbar -mx-1 px-1 pb-1">
+                        {paymentMethods.map(m => {
+                          const isSelected = methodId === m.id;
+                          const isBlocked = transferDestId === m.id;
+                          const shortLabel = { credito: 'Crédito', cuenta: 'Cuenta', efectivo: 'Efectivo', inversion: 'Inversión' }[m.type] || 'Cuenta';
+                          const bal = getAccountBalance ? getAccountBalance(m.id) : 0;
+                          return (
+                            <button
+                              type="button"
+                              key={m.id}
+                              onClick={() => setMethodId(m.id)}
+                              className={`relative shrink-0 snap-start w-36 h-[88px] rounded-2xl p-3 text-left bg-gradient-to-br ${m.color || 'from-gray-500 to-gray-700'} text-white shadow-md transition-all ${isBlocked ? 'ring-2 ring-red-500 opacity-50' : isSelected ? 'ring-2 ring-white/90 scale-[1.03]' : 'opacity-70'}`}
+                            >
+                              <div className="flex justify-between items-start">
+                                <span className="text-[9px] font-black uppercase tracking-wider opacity-90">{shortLabel}</span>
+                                {isSelected && !isBlocked && (
+                                  <span className="w-4 h-4 rounded-full bg-white/90 text-emerald-600 flex items-center justify-center text-[10px] font-black">✓</span>
+                                )}
+                                {isBlocked && (
+                                  <span className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center text-[10px] font-black">!</span>
+                                )}
+                              </div>
+                              <p className="text-xs font-bold leading-tight mt-3 line-clamp-2">{m.name}</p>
+                              <p className="text-[9px] opacity-80 mt-0.5">
+                                {isBlocked ? 'Ya es el destino' : `${m.type === 'credito' ? 'Deuda ' : 'Saldo '}${new Intl.NumberFormat('es-AR', { notation: 'compact' }).format(bal)}`}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-center">
+                    <span className={`text-lg ${isDarkMode ? 'text-slate-500' : 'text-gray-400'}`}>⇣</span>
+                  </div>
+
+                  <div>
+                    <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>
+                      Cuenta de Destino
+                    </label>
+                    {paymentMethods.length === 0 ? (
+                      <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Todavía no agregaste ninguna cuenta o tarjeta.</p>
+                    ) : (
+                      <div className="flex gap-2.5 overflow-x-auto snap-x snap-mandatory no-scrollbar -mx-1 px-1 pb-1">
+                        {paymentMethods.map(m => {
+                          const isSelected = transferDestId === m.id;
+                          const isBlocked = methodId === m.id;
+                          const shortLabel = { credito: 'Crédito', cuenta: 'Cuenta', efectivo: 'Efectivo', inversion: 'Inversión' }[m.type] || 'Cuenta';
+                          const bal = getAccountBalance ? getAccountBalance(m.id) : 0;
+                          return (
+                            <button
+                              type="button"
+                              key={m.id}
+                              onClick={() => setTransferDestId(m.id)}
+                              className={`relative shrink-0 snap-start w-36 h-[88px] rounded-2xl p-3 text-left bg-gradient-to-br ${m.color || 'from-gray-500 to-gray-700'} text-white shadow-md transition-all ${isBlocked ? 'ring-2 ring-red-500 opacity-50' : isSelected ? 'ring-2 ring-white/90 scale-[1.03]' : 'opacity-70'}`}
+                            >
+                              <div className="flex justify-between items-start">
+                                <span className="text-[9px] font-black uppercase tracking-wider opacity-90">{shortLabel}</span>
+                                {isSelected && !isBlocked && (
+                                  <span className="w-4 h-4 rounded-full bg-white/90 text-emerald-600 flex items-center justify-center text-[10px] font-black">✓</span>
+                                )}
+                                {isBlocked && (
+                                  <span className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center text-[10px] font-black">!</span>
+                                )}
+                              </div>
+                              <p className="text-xs font-bold leading-tight mt-3 line-clamp-2">{m.name}</p>
+                              <p className="text-[9px] opacity-80 mt-0.5">
+                                {isBlocked ? 'Ya es el origen' : (m.type === 'credito' ? `Deuda ${new Intl.NumberFormat('es-AR', { notation: 'compact' }).format(bal)}` : `Saldo ${new Intl.NumberFormat('es-AR', { notation: 'compact' }).format(bal)}`)}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {methodId && transferDestId && methodId === transferDestId && (
+                    <p className="text-xs text-red-500 font-semibold bg-red-500/10 border border-red-500/20 rounded-xl p-2.5">
+                      La cuenta de origen y la cuenta de destino deben ser diferentes.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {type === 'ahorro' ? (
                 <div>
                   <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-2`}>Destino del Ahorro</label>
@@ -589,7 +696,7 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
                     ))}
                   </select>
                 </div>
-              ) : (
+              ) : type === 'transferencia' ? null : (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={`block text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-1`}>Categoría</label>
@@ -650,7 +757,8 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
 
           <button 
             type="submit" 
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg py-4 rounded-2xl shadow-lg shadow-blue-500/30 transition-all active:scale-95 mt-4"
+            disabled={type === 'transferencia' && (!methodId || !transferDestId || methodId === transferDestId)}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg py-4 rounded-2xl shadow-lg shadow-blue-500/30 transition-all active:scale-95 mt-4 disabled:opacity-40"
           >
             Guardar Movimiento
           </button>
@@ -1655,6 +1763,9 @@ function ExpenseTrackerApp() {
         if (t.methodId === accountId) {
           if (t.type === 'gasto') deuda += parseFloat(t.amount || 0);
           else if (t.type === 'ingreso') deuda -= parseFloat(t.amount || 0);
+          else if (t.type === 'transferencia') deuda += parseFloat(t.amount || 0); // adelanto en efectivo con la tarjeta
+        } else if (t.type === 'transferencia' && t.destMethodId === accountId) {
+          deuda -= parseFloat(t.amount || 0); // pago de tarjeta desde otra cuenta
         }
       });
       return deuda;
@@ -1665,6 +1776,9 @@ function ExpenseTrackerApp() {
         bal += parseFloat(t.amount || 0);
       } else if (t.type === 'gasto' && t.methodId === accountId) {
         bal -= parseFloat(t.amount || 0);
+      } else if (t.type === 'transferencia') {
+        if (t.methodId === accountId) bal -= parseFloat(t.amount || 0);
+        if (t.destMethodId === accountId) bal += parseFloat(t.amount || 0);
       }
     });
     return bal;
@@ -2944,19 +3058,22 @@ function ExpenseTrackerApp() {
             {transactions.filter(t => isTransactionInSelectedMonth(t.date)).slice(0, 3).map(t => (
               <div key={t.id} className="flex justify-between items-center gap-2 p-4">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${t.type === 'ingreso' ? 'bg-green-500/10 text-green-500' : t.type === 'ahorro' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
-                    {t.type === 'ingreso' ? <TrendingUpIcon /> : t.type === 'ahorro' ? <TargetIcon /> : <TrendingDownIcon />}
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${t.type === 'ingreso' ? 'bg-green-500/10 text-green-500' : t.type === 'ahorro' ? 'bg-emerald-500/10 text-emerald-500' : t.type === 'transferencia' ? 'bg-sky-500/10 text-sky-500' : 'bg-red-500/10 text-red-500'}`}>
+                    {t.type === 'ingreso' ? <TrendingUpIcon /> : t.type === 'ahorro' ? <TargetIcon /> : t.type === 'transferencia' ? <span className="font-bold text-base">⇄</span> : <TrendingDownIcon />}
                   </div>
                   <div className="min-w-0">
                     <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'} truncate`}>{t.description}</p>
                     <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize truncate`}>
-                      {categories.find(c => c.id === t.category)?.name || t.category} {t.typeClassification ? `• ${typesList.find(ty => ty.id === t.typeClassification)?.name || 'Personalizado'}` : ''}
+                      {t.type === 'transferencia'
+                        ? `${paymentMethods.find(m => m.id === t.methodId)?.name || '?'} → ${paymentMethods.find(m => m.id === t.destMethodId)?.name || '?'}`
+                        : <>{categories.find(c => c.id === t.category)?.name || t.category} {t.typeClassification ? `• ${typesList.find(ty => ty.id === t.typeClassification)?.name || 'Personalizado'}` : ''}</>
+                      }
                     </p>
                   </div>
                 </div>
                 <div className="flex flex-col items-end shrink-0">
-                  <span className={`font-bold whitespace-nowrap ${t.type === 'ingreso' ? 'text-green-500' : t.type === 'ahorro' ? 'text-emerald-500' : (isDarkMode ? 'text-white' : 'text-gray-800')}`}>
-                    {t.type === 'ingreso' ? '+' : t.type === 'ahorro' ? '🎯 ' : '-'}{formatCurrency(t.amount)}
+                  <span className={`font-bold whitespace-nowrap ${t.type === 'ingreso' ? 'text-green-500' : t.type === 'ahorro' ? 'text-emerald-500' : t.type === 'transferencia' ? 'text-sky-500' : (isDarkMode ? 'text-white' : 'text-gray-800')}`}>
+                    {t.type === 'ingreso' ? '+' : t.type === 'ahorro' ? '🎯 ' : t.type === 'transferencia' ? '⇄ ' : '-'}{formatCurrency(t.amount)}
                   </span>
                   {t.originalCurrency && t.originalCurrency !== settings.currency && (
                     <span className="text-[10px] text-gray-400 font-medium whitespace-nowrap">
@@ -3375,6 +3492,7 @@ function ExpenseTrackerApp() {
                   <option value="ingreso">Ingresos</option>
                   <option value="gasto">Gastos</option>
                   <option value="ahorro">Ahorros</option>
+                  <option value="transferencia">Transferencias</option>
                 </select>
               </div>
             </div>
@@ -3385,12 +3503,13 @@ function ExpenseTrackerApp() {
               ) : (
                 filteredTransactions.map(t => {
                   const method = paymentMethods.find(m => m.id === t.methodId);
+                  const destMethod = t.type === 'transferencia' ? paymentMethods.find(m => m.id === t.destMethodId) : null;
                   const category = categories.find(c => c.id === t.category);
                   return (
                     <div key={t.id} className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border flex justify-between items-center gap-2 group`}>
                       <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${t.type === 'ingreso' ? 'bg-green-500/10 text-green-500' : t.type === 'ahorro' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
-                          {t.type === 'ingreso' ? <TrendingUpIcon /> : t.type === 'ahorro' ? <TargetIcon /> : <TrendingDownIcon />}
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${t.type === 'ingreso' ? 'bg-green-500/10 text-green-500' : t.type === 'ahorro' ? 'bg-emerald-500/10 text-emerald-500' : t.type === 'transferencia' ? 'bg-sky-500/10 text-sky-500' : 'bg-red-500/10 text-red-500'}`}>
+                          {t.type === 'ingreso' ? <TrendingUpIcon /> : t.type === 'ahorro' ? <TargetIcon /> : t.type === 'transferencia' ? <span className="font-bold text-lg">⇄</span> : <TrendingDownIcon />}
                         </div>
                         <div className="min-w-0">
                           <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'} text-base truncate`}>{t.description}</p>
@@ -3398,16 +3517,26 @@ function ExpenseTrackerApp() {
                             <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} whitespace-nowrap`}>
                               {new Date(t.date).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}
                             </span>
-                            <span className={`w-1 h-1 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
-                            <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize truncate`}>{category ? category.name : t.category}</span>
-                            {t.typeClassification && (
+                            {t.type !== 'transferencia' && (
+                              <>
+                                <span className={`w-1 h-1 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
+                                <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize truncate`}>{category ? category.name : t.category}</span>
+                              </>
+                            )}
+                            {t.typeClassification && t.type !== 'transferencia' && (
                               <>
                                 <span className={`w-1 h-1 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
                                 <span className="text-xs text-purple-400 font-medium capitalize truncate">{typesList.find(ty => ty.id === t.typeClassification)?.name || 'Personalizado'}</span>
                               </>
                             )}
                           </div>
-                          {method && (
+                          {t.type === 'transferencia' ? (
+                            <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+                              <span className={`text-[10px] ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-gray-100 text-gray-600 border-gray-200'} px-2 py-0.5 rounded-md font-semibold tracking-wide shadow-sm border`}>
+                                {method?.name || '?'} → {destMethod?.name || '?'}
+                              </span>
+                            </div>
+                          ) : method && (
                             <div className="mt-1.5 flex items-center gap-1 flex-wrap">
                               <span className={`text-[10px] ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-gray-100 text-gray-600 border-gray-200'} px-2 py-0.5 rounded-md font-semibold tracking-wide shadow-sm border`}>
                                 {method.name}
@@ -3418,8 +3547,8 @@ function ExpenseTrackerApp() {
                       </div>
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
                         <div className="flex flex-col items-end">
-                          <span className={`font-bold whitespace-nowrap ${t.type === 'ingreso' ? 'text-green-500' : t.type === 'ahorro' ? 'text-emerald-500' : (isDarkMode ? 'text-white' : 'text-gray-900')}`}>
-                            {t.type === 'ingreso' ? '+' : t.type === 'ahorro' ? '🎯 ' : '-'}{formatCurrency(t.amount)}
+                          <span className={`font-bold whitespace-nowrap ${t.type === 'ingreso' ? 'text-green-500' : t.type === 'ahorro' ? 'text-emerald-500' : t.type === 'transferencia' ? 'text-sky-500' : (isDarkMode ? 'text-white' : 'text-gray-900')}`}>
+                            {t.type === 'ingreso' ? '+' : t.type === 'ahorro' ? '🎯 ' : t.type === 'transferencia' ? '⇄ ' : '-'}{formatCurrency(t.amount)}
                           </span>
                           {t.originalCurrency && t.originalCurrency !== settings.currency && (
                             <span className="text-[10px] text-gray-400 font-medium mt-0.5 whitespace-nowrap">

@@ -3006,6 +3006,45 @@ function ExpenseTrackerApp() {
     const [filterCategory, setFilterCategory] = useState('todos');
     const [filterType, setFilterType] = useState('todos');
 
+    const [isAddingCatReg, setIsAddingCatReg] = useState(false);
+    const [editingCatRegId, setEditingCatRegId] = useState(null);
+    const [editCatRegName, setEditCatRegName] = useState('');
+    const [editCatRegType, setEditCatRegType] = useState('gasto');
+    const [editCatRegBudget, setEditCatRegBudget] = useState('');
+    const [newCatRegName, setNewCatRegName] = useState('');
+    const [newCatRegType, setNewCatRegType] = useState('gasto');
+    const [newCatRegBudget, setNewCatRegBudget] = useState('');
+
+    const handleAddCategoryReg = (e) => {
+      e.preventDefault();
+      if (!newCatRegName) return;
+      setCategories([...categories, {
+        id: `cat_${Date.now()}`,
+        name: newCatRegName,
+        type: newCatRegType,
+        budget: parseFloat(newCatRegBudget) || 0
+      }]);
+      setNewCatRegName(''); setNewCatRegBudget(''); setIsAddingCatReg(false);
+    };
+
+    const startEditingCatReg = (category) => {
+      setEditingCatRegId(category.id);
+      setEditCatRegName(category.name);
+      setEditCatRegType(category.type);
+      setEditCatRegBudget(category.budget || '');
+    };
+
+    const handleSaveEditCatReg = (e, id) => {
+      e.preventDefault();
+      if (!editCatRegName) return;
+      setCategories(categories.map(c => c.id === id ? { ...c, name: editCatRegName, type: editCatRegType, budget: parseFloat(editCatRegBudget) || 0 } : c));
+      setEditingCatRegId(null);
+    };
+
+    const handleDeleteCategoryReg = (id) => {
+      setCategories(categories.filter(c => c.id !== id));
+    };
+
     const [isAddingHabitual, setIsAddingHabitual] = useState(false);
     const [editingHabitualId, setEditingHabitualId] = useState(null);
 
@@ -3221,7 +3260,7 @@ function ExpenseTrackerApp() {
     return (
       <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-left-4 duration-300`}>
         <div className="flex justify-between items-center mb-4 mt-2">
-          <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Registros</h1>
+          <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Registro</h1>
         </div>
 
         <div className={`${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-gray-200/70 text-gray-500'} p-1 rounded-2xl flex w-full mb-6 overflow-x-auto no-scrollbar`}>
@@ -3242,6 +3281,24 @@ function ExpenseTrackerApp() {
             className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'cuotas' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
           >
             Seguimiento Cuotas
+          </button>
+          <button 
+            onClick={() => setSubTab('presupuestos')}
+            className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'presupuestos' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
+          >
+            Presupuestos
+          </button>
+          <button 
+            onClick={() => setSubTab('categorias')}
+            className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'categorias' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
+          >
+            Categorías
+          </button>
+          <button 
+            onClick={() => setSubTab('viajes')}
+            className={`flex-1 py-2 px-1 text-[10px] font-bold rounded-xl transition-all whitespace-nowrap ${subTab === 'viajes' ? (isDarkMode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-900 shadow-sm') : ''}`}
+          >
+            Modo Viaje
           </button>
         </div>
 
@@ -3708,6 +3765,118 @@ function ExpenseTrackerApp() {
                 })
               )}
             </div>
+          </div>
+        )}
+
+        {subTab === 'presupuestos' && (
+          <div className="space-y-3">
+            <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} mb-1`}>Progreso del mes actual por categoría. Para cambiar un presupuesto, andá a la pestaña "Categorías".</p>
+            {categories.filter(c => c.type === 'gasto' && (c.budget || 0) > 0).length === 0 ? (
+              <div className={`text-center ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} text-sm p-8 rounded-3xl border`}>Todavía no le pusiste presupuesto a ninguna categoría.</div>
+            ) : (
+              categories.filter(c => c.type === 'gasto' && (c.budget || 0) > 0).map(cat => {
+                const spent = totals.categoryBreakdown[cat.id] || 0;
+                const limit = cat.budget || 0;
+                const percent = limit > 0 ? Math.min((spent / limit) * 100, 100) : 0;
+                return (
+                  <div key={cat.id} className={`${isDarkMode ? 'bg-[#0b1120] border-slate-800/70' : 'bg-white border-gray-100'} p-3.5 rounded-2xl shadow-sm border`}>
+                    <div className="flex justify-between items-center mb-2.5">
+                      <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'} capitalize`}>{cat.name}</span>
+                      <span className={`text-xs font-semibold ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>
+                        {formatCurrency(spent)} <span className={`${isDarkMode ? 'text-slate-500' : 'text-gray-400'} font-normal`}>/ {formatCurrency(limit)}</span>
+                      </span>
+                    </div>
+                    <div className={`w-full ${isDarkMode ? 'bg-slate-800/60' : 'bg-gray-100'} h-2.5 rounded-full overflow-hidden`}>
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${percent >= 90 ? 'bg-red-500' : percent >= 75 ? 'bg-orange-400' : 'bg-blue-500'}`}
+                        style={{ width: `${percent}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {subTab === 'categorias' && (
+          <div className="space-y-4">
+            <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border`}>
+              <div className="flex justify-between items-center mb-3">
+                <p className={`text-xs font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Categorías y Presupuestos</p>
+                <button onClick={() => setIsAddingCatReg(!isAddingCatReg)} className="text-blue-500 text-xs font-bold">
+                  {isAddingCatReg ? 'Cancelar' : '+ Añadir'}
+                </button>
+              </div>
+              {isAddingCatReg && (
+                <form onSubmit={handleAddCategoryReg} className={`p-3 mb-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} space-y-2`}>
+                  <input type="text" placeholder="Nombre" value={newCatRegName} onChange={e => setNewCatRegName(e.target.value)} className={`p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm w-full outline-none`} required />
+                  <div className="flex gap-2">
+                    <select value={newCatRegType} onChange={e => setNewCatRegType(e.target.value)} className={`flex-1 p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm outline-none`}>
+                      <option value="gasto">Gasto</option>
+                      <option value="ingreso">Ingreso</option>
+                    </select>
+                    <input type="text" inputMode="decimal" placeholder="Presupuesto (opcional)" value={newCatRegBudget} onChange={e => setNewCatRegBudget(e.target.value)} className={`flex-1 p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm outline-none`} />
+                  </div>
+                  <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-xl text-xs">Guardar categoría</button>
+                </form>
+              )}
+              <div className="space-y-2">
+                {categories.map(c => (
+                  <div key={c.id} className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-800' : 'bg-gray-50 border-gray-100'}`}>
+                    {editingCatRegId === c.id ? (
+                      <form onSubmit={(e) => handleSaveEditCatReg(e, c.id)} className="space-y-2">
+                        <input type="text" value={editCatRegName} onChange={e => setEditCatRegName(e.target.value)} className={`p-2 rounded-lg border w-full text-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} outline-none`} required />
+                        <div className="flex gap-2">
+                          <select value={editCatRegType} onChange={e => setEditCatRegType(e.target.value)} className={`flex-1 p-2 rounded-lg border text-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} outline-none`}>
+                            <option value="gasto">Gasto</option>
+                            <option value="ingreso">Ingreso</option>
+                          </select>
+                          <input type="text" inputMode="decimal" placeholder="Presupuesto" value={editCatRegBudget} onChange={e => setEditCatRegBudget(e.target.value)} className={`flex-1 p-2 rounded-lg border text-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} outline-none`} />
+                        </div>
+                        <div className="flex gap-2">
+                          <button type="submit" className="flex-1 bg-blue-600 text-white font-bold py-1.5 rounded-lg text-xs">Guardar</button>
+                          <button type="button" onClick={() => setEditingCatRegId(null)} className={`flex-1 ${isDarkMode ? 'bg-slate-700 text-slate-200' : 'bg-gray-200 text-gray-700'} font-bold py-1.5 rounded-lg text-xs`}>Cancelar</button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="flex justify-between items-center">
+                        <div className="min-w-0">
+                          <p className={`text-sm font-bold truncate ${isDarkMode ? 'text-white' : 'text-gray-800'} capitalize`}>{c.name}</p>
+                          <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize`}>{c.type} {c.budget > 0 ? `• Presupuesto: ${formatCurrency(c.budget)}` : ''}</p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button onClick={() => startEditingCatReg(c)} className="text-blue-500 p-2 hover:bg-blue-500/10 rounded-lg"><EditIcon /></button>
+                          <button onClick={() => handleDeleteCategoryReg(c.id)} className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-500/10 rounded-lg"><TrashIcon /></button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {subTab === 'viajes' && (
+          <div className="-mx-4 -mt-2">
+            <TripsView
+              isDarkMode={isDarkMode}
+              settings={settings}
+              authUser={authUser}
+              trips={trips}
+              tripsCheckDone={tripsCheckDone}
+              setActiveTab={setActiveTab}
+              onCreateTrip={handleCreateTrip}
+              onJoinTrip={handleJoinTrip}
+              onLeaveTrip={handleLeaveTrip}
+              onDeleteTrip={handleDeleteTrip}
+              onAddTripTransaction={handleAddTripTransaction}
+              onDeleteTripTransaction={handleDeleteTripTransaction}
+              onUpdateTrip={handleUpdateTrip}
+              activeTripId={settings.activeTripId || null}
+              onToggleActiveTrip={(tripId) => setSettings(s => ({ ...s, activeTripId: s.activeTripId === tripId ? null : tripId }))}
+            />
           </div>
         )}
       </div>
@@ -4614,7 +4783,7 @@ function ExpenseTrackerApp() {
 
             <button onClick={() => { setActiveTab('history'); setSelectedCardId(null); }} className="flex flex-col items-center justify-center w-12 gap-1">
               <ListIcon active={activeTab === 'history'} />
-              <span className={`text-[10px] font-medium ${activeTab === 'history' ? 'text-blue-500' : (isDarkMode ? 'text-slate-400' : 'text-gray-500')}`}>Historial</span>
+              <span className={`text-[10px] font-medium ${activeTab === 'history' ? 'text-blue-500' : (isDarkMode ? 'text-slate-400' : 'text-gray-500')}`}>Registro</span>
             </button>
 
             <button onClick={() => { setActiveTab('settings'); setSelectedCardId(null); }} className="flex flex-col items-center justify-center w-12 gap-1">

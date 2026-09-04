@@ -297,7 +297,7 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
     const [smartInputText, setSmartInputText] = useState('');
     const [smartFeedback, setSmartFeedback] = useState(null); // { type: 'error'|'info', text: '...' } | null
     
-    const availableCategories = categories.filter(c => c.type === type);
+    const availableCategories = categories.filter(c => c.type === type && c.active !== false);
     const [categoryId, setCategoryId] = useState(availableCategories.length > 0 ? availableCategories[0].id : '');
     const [typeClassification, setTypeClassification] = useState(typesList.length > 0 ? typesList[0].id : 'diario');
     const [methodId, setMethodId] = useState(paymentMethods.length > 0 ? paymentMethods[0].id : '');
@@ -1504,6 +1504,7 @@ function ExpenseTrackerApp() {
   });
   const [categories, setCategories] = useState([]);
   const [typesList, setTypesList] = useState([]);
+  const [profiles, setProfiles] = useState([]);
   const [commitments, setCommitments] = useState([]);
   const [installmentTracks, setInstallmentTracks] = useState([]);
   const [bankAccounts, setBankAccounts] = useState([]);
@@ -1526,6 +1527,7 @@ function ExpenseTrackerApp() {
     const savedSettings = localStorage.getItem('finance_settings');
     const savedCategories = localStorage.getItem('finance_categories');
     const savedTypes = localStorage.getItem('finance_types');
+    const savedProfiles = localStorage.getItem('finance_profiles');
     const savedCommitments = localStorage.getItem('finance_commitments');
     const savedInstallmentTracks = localStorage.getItem('finance_installments_track');
     const savedBanks = localStorage.getItem('finance_banks');
@@ -1545,6 +1547,8 @@ function ExpenseTrackerApp() {
         { id: 'otro', name: 'Otro' }
       ]);
     }
+
+    if (savedProfiles) try { setProfiles(JSON.parse(savedProfiles)); } catch (e) {}
 
     if (savedCategories) {
       try { setCategories(JSON.parse(savedCategories)); } catch (e) {}
@@ -1630,13 +1634,14 @@ function ExpenseTrackerApp() {
       localStorage.setItem('finance_settings', JSON.stringify(settings));
       localStorage.setItem('finance_categories', JSON.stringify(categories));
       localStorage.setItem('finance_types', JSON.stringify(typesList));
+      localStorage.setItem('finance_profiles', JSON.stringify(profiles));
       localStorage.setItem('finance_commitments', JSON.stringify(commitments));
       localStorage.setItem('finance_installments_track', JSON.stringify(installmentTracks));
       localStorage.setItem('finance_banks', JSON.stringify(bankAccounts));
       localStorage.setItem('finance_goals', JSON.stringify(savingsGoals));
       localStorage.setItem('finance_emergency', JSON.stringify(emergencyFund));
     }
-  }, [transactions, paymentMethods, settings, categories, typesList, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, isLoaded]);
+  }, [transactions, paymentMethods, settings, categories, typesList, profiles, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, isLoaded]);
 
   // Detectar en qué viajes soy miembro (para suscribirme a cada uno)
   useEffect(() => {
@@ -1735,6 +1740,7 @@ function ExpenseTrackerApp() {
         if (data.settings) setSettings(data.settings);
         if (data.categories) setCategories(data.categories);
         if (data.typesList) setTypesList(data.typesList);
+        if (data.profiles) setProfiles(data.profiles);
         if (data.commitments) setCommitments(data.commitments);
         if (data.installmentTracks) setInstallmentTracks(data.installmentTracks);
         if (data.savingsGoals) setSavingsGoals(data.savingsGoals);
@@ -1746,7 +1752,7 @@ function ExpenseTrackerApp() {
         // Primera vez que este usuario sincroniza: sube los datos que ya tenía en este dispositivo
         hasLoadedCloudOnce.current = true;
         docRef.set({
-          transactions, paymentMethods, settings, categories, typesList,
+          transactions, paymentMethods, settings, categories, typesList, profiles,
           commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
           updatedAt: Date.now()
         }).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
@@ -1765,13 +1771,13 @@ function ExpenseTrackerApp() {
     const timer = setTimeout(() => {
       setSyncStatus('syncing');
       db.collection('users').doc(authUser.uid).set({
-        transactions, paymentMethods, settings, categories, typesList,
+        transactions, paymentMethods, settings, categories, typesList, profiles,
         commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund,
         updatedAt: Date.now()
       }, { merge: true }).then(() => setSyncStatus('synced')).catch(() => setSyncStatus('error'));
     }, 1200);
     return () => clearTimeout(timer);
-  }, [transactions, paymentMethods, settings, categories, typesList, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, authUser]);
+  }, [transactions, paymentMethods, settings, categories, typesList, profiles, commitments, installmentTracks, bankAccounts, savingsGoals, emergencyFund, authUser]);
 
   const formatAmountInput = (val) => {
     if (!val) return '';
@@ -1879,6 +1885,23 @@ function ExpenseTrackerApp() {
   const globalBalance = useMemo(() => {
     return totals.income - totals.expense;
   }, [totals]);
+
+  // Estadísticas de un Perfil de presupuesto: asignado, consumido, ingresos, disponible y % ejecutado
+  const getProfileStats = (profile) => {
+    const linkedIds = new Set(profile.categoryIds || []);
+    const monthTx = transactions.filter(t => linkedIds.has(t.category) && isTransactionInSelectedMonth(t.date));
+    const spent = monthTx.filter(t => t.type === 'gasto').reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+    const income = monthTx.filter(t => t.type === 'ingreso').reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+    const assigned = profile.budgetType === 'percent'
+      ? totals.income * ((parseFloat(profile.budgetValue) || 0) / 100)
+      : (parseFloat(profile.budgetValue) || 0);
+    const available = assigned + income - spent;
+    const pct = assigned > 0 ? Math.min((spent / assigned) * 100, 999) : 0;
+    return { spent, income, assigned, available, pct };
+  };
+
+  // ¿La categoría tiene movimientos ya cargados? (para no permitir borrarla y romper el historial)
+  const isCategoryInUse = (categoryId) => transactions.some(t => t.category === categoryId);
 
   const deleteTransaction = (id) => {
     setTransactions(transactions.filter(t => t.id !== id));
@@ -3261,7 +3284,17 @@ function ExpenseTrackerApp() {
     };
 
     const handleDeleteCategoryReg = (id) => {
+      if (isCategoryInUse(id)) {
+        if (window.confirm('Esta categoría ya tiene movimientos cargados, así que no se puede borrar sin romper el historial. ¿Querés desactivarla en su lugar? (dejará de aparecer para elegir en movimientos nuevos)')) {
+          setCategories(categories.map(c => c.id === id ? { ...c, active: false } : c));
+        }
+        return;
+      }
       setCategories(categories.filter(c => c.id !== id));
+    };
+
+    const handleToggleCategoryActiveReg = (id) => {
+      setCategories(categories.map(c => c.id === id ? { ...c, active: c.active === false } : c));
     };
 
     const [isAddingHabitual, setIsAddingHabitual] = useState(false);
@@ -4067,12 +4100,15 @@ function ExpenseTrackerApp() {
                         </div>
                       </form>
                     ) : (
-                      <div className="flex justify-between items-center">
+                      <div className={`flex justify-between items-center ${c.active === false ? 'opacity-50' : ''}`}>
                         <div className="min-w-0">
-                          <p className={`text-sm font-bold truncate ${isDarkMode ? 'text-white' : 'text-gray-800'} capitalize`}>{c.name}</p>
+                          <p className={`text-sm font-bold truncate ${isDarkMode ? 'text-white' : 'text-gray-800'} capitalize`}>{c.name} {c.active === false && <span className="text-[9px] font-bold uppercase text-gray-400">(Inactiva)</span>}</p>
                           <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize`}>{c.type}</p>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
+                          <button onClick={() => handleToggleCategoryActiveReg(c.id)} className={`text-[10px] font-bold px-2 py-1.5 rounded-lg ${c.active === false ? 'bg-green-500/10 text-green-500' : (isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-gray-100 text-gray-500')}`}>
+                            {c.active === false ? 'Reactivar' : 'Desactivar'}
+                          </button>
                           <button onClick={() => startEditingCatReg(c)} className="text-blue-500 p-2 hover:bg-blue-500/10 rounded-lg"><EditIcon /></button>
                           <button onClick={() => handleDeleteCategoryReg(c.id)} className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-500/10 rounded-lg"><TrashIcon /></button>
                         </div>
@@ -4500,6 +4536,64 @@ function ExpenseTrackerApp() {
     const [isAddingType, setIsAddingType] = useState(false);
     const [newTypeName, setNewTypeName] = useState('');
 
+    const [isAddingProfile, setIsAddingProfile] = useState(false);
+    const [editingProfileId, setEditingProfileId] = useState(null);
+    const [viewingProfileId, setViewingProfileId] = useState(null);
+    const [profileSearch, setProfileSearch] = useState('');
+    const [newProfileName, setNewProfileName] = useState('');
+    const [newProfileBudgetType, setNewProfileBudgetType] = useState('fixed');
+    const [newProfileBudgetValue, setNewProfileBudgetValue] = useState('');
+    const [editProfileName, setEditProfileName] = useState('');
+    const [editProfileBudgetType, setEditProfileBudgetType] = useState('fixed');
+    const [editProfileBudgetValue, setEditProfileBudgetValue] = useState('');
+
+    const handleAddProfile = (e) => {
+      e.preventDefault();
+      if (!newProfileName.trim()) return;
+      setProfiles([...profiles, {
+        id: `prof_${Date.now()}`,
+        name: newProfileName.trim(),
+        budgetType: newProfileBudgetType,
+        budgetValue: parseFloat(newProfileBudgetValue) || 0,
+        categoryIds: []
+      }]);
+      setNewProfileName(''); setNewProfileBudgetValue(''); setNewProfileBudgetType('fixed');
+      setIsAddingProfile(false);
+    };
+
+    const startEditingProfile = (p) => {
+      setEditingProfileId(p.id);
+      setEditProfileName(p.name);
+      setEditProfileBudgetType(p.budgetType || 'fixed');
+      setEditProfileBudgetValue(p.budgetValue ? String(p.budgetValue) : '');
+    };
+
+    const handleSaveEditProfile = (e, id) => {
+      e.preventDefault();
+      if (!editProfileName.trim()) return;
+      setProfiles(profiles.map(p => p.id === id ? { ...p, name: editProfileName.trim(), budgetType: editProfileBudgetType, budgetValue: parseFloat(editProfileBudgetValue) || 0 } : p));
+      setEditingProfileId(null);
+    };
+
+    const handleDeleteProfile = (id) => {
+      if (window.confirm('¿Borrar este perfil de presupuesto? Las categorías y movimientos no se ven afectados.')) {
+        setProfiles(profiles.filter(p => p.id !== id));
+        if (viewingProfileId === id) setViewingProfileId(null);
+      }
+    };
+
+    const handleToggleProfileActive = (id) => {
+      setProfiles(profiles.map(p => p.id === id ? { ...p, active: p.active === false } : p));
+    };
+
+    const handleLinkCategoryToProfile = (profileId, categoryId) => {
+      setProfiles(profiles.map(p => p.id === profileId ? { ...p, categoryIds: [...(p.categoryIds || []), categoryId] } : p));
+    };
+
+    const handleUnlinkCategoryFromProfile = (profileId, categoryId) => {
+      setProfiles(profiles.map(p => p.id === profileId ? { ...p, categoryIds: (p.categoryIds || []).filter(id => id !== categoryId) } : p));
+    };
+
     const [isLinkingBank, setIsLinkingBank] = useState(false);
     const [isSimulatingSync, setIsSimulatingSync] = useState(false);
     const [newBankName, setNewBankName] = useState('BBVA');
@@ -4545,7 +4639,17 @@ function ExpenseTrackerApp() {
     };
 
     const handleDeleteCategory = (id) => {
+      if (isCategoryInUse(id)) {
+        if (window.confirm('Esta categoría ya tiene movimientos cargados, así que no se puede borrar sin romper el historial. ¿Querés desactivarla en su lugar? (dejará de aparecer para elegir en movimientos nuevos)')) {
+          setCategories(categories.map(c => c.id === id ? { ...c, active: false } : c));
+        }
+        return;
+      }
       setCategories(categories.filter(c => c.id !== id));
+    };
+
+    const handleToggleCategoryActive = (id) => {
+      setCategories(categories.map(c => c.id === id ? { ...c, active: c.active === false } : c));
     };
 
     const startEditingCategory = (category) => {
@@ -4776,9 +4880,12 @@ function ExpenseTrackerApp() {
                             </div>
                           </form>
                         ) : (
-                          <div className="flex justify-between items-center">
-                            <p className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'} capitalize`}>{c.name}</p>
+                          <div className={`flex justify-between items-center ${c.active === false ? 'opacity-50' : ''}`}>
+                            <p className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'} capitalize`}>{c.name} {c.active === false && <span className="text-[9px] font-bold uppercase text-gray-400">(Inactiva)</span>}</p>
                             <div className="flex items-center gap-1">
+                              <button onClick={() => handleToggleCategoryActive(c.id)} className={`text-[10px] font-bold px-2 py-1.5 rounded-lg ${c.active === false ? 'bg-green-500/10 text-green-500' : (isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-gray-100 text-gray-500')}`}>
+                                {c.active === false ? 'Reactivar' : 'Desactivar'}
+                              </button>
                               <button onClick={() => startEditingCategory(c)} className="text-blue-500 p-2 hover:bg-blue-500/10 rounded-lg"><EditIcon /></button>
                               <button onClick={() => handleDeleteCategory(c.id)} className="text-red-400 p-2 hover:bg-red-500/10 rounded-lg"><TrashIcon /></button>
                             </div>
@@ -4791,6 +4898,166 @@ function ExpenseTrackerApp() {
               );
             })}
           </div>
+        </div>
+
+        <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-5 shadow-sm border mb-6`}>
+          {viewingProfileId ? (() => {
+            const profile = profiles.find(p => p.id === viewingProfileId);
+            if (!profile) { setViewingProfileId(null); return null; }
+            const linkedIds = new Set(profile.categoryIds || []);
+            const linkableCats = categories.filter(c => c.type === 'gasto' || c.type === 'ingreso');
+            const linked = linkableCats.filter(c => linkedIds.has(c.id));
+            const available = linkableCats.filter(c => !linkedIds.has(c.id) && c.name.toLowerCase().includes(profileSearch.toLowerCase()));
+            const stats = getProfileStats(profile);
+            return (
+              <div>
+                <div className="flex items-center gap-3 mb-4">
+                  <button onClick={() => { setViewingProfileId(null); setProfileSearch(''); }} className={`${isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-gray-100 text-gray-800'} p-2 rounded-full shadow-sm`}>
+                    <ArrowLeftIcon />
+                  </button>
+                  <div className="min-w-0">
+                    <h3 className={`font-bold text-sm truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{profile.name}</h3>
+                    <p className="text-[10px] text-blue-500 font-bold">Categorías vinculadas</p>
+                  </div>
+                </div>
+
+                <div className={`${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} rounded-2xl p-3 border mb-4 grid grid-cols-2 gap-2 text-center`}>
+                  <div>
+                    <p className={`text-[9px] uppercase font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Asignado</p>
+                    <p className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{formatCurrency(stats.assigned)}</p>
+                  </div>
+                  <div>
+                    <p className={`text-[9px] uppercase font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Consumido (gastos)</p>
+                    <p className="text-sm font-bold text-red-500">{formatCurrency(stats.spent)}</p>
+                  </div>
+                  <div>
+                    <p className={`text-[9px] uppercase font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Ingresos</p>
+                    <p className="text-sm font-bold text-green-500">{formatCurrency(stats.income)}</p>
+                  </div>
+                  <div>
+                    <p className={`text-[9px] uppercase font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Disponible</p>
+                    <p className={`text-sm font-bold ${stats.available < 0 ? 'text-red-500' : 'text-green-500'}`}>{formatCurrency(stats.available)}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className={`text-[9px] uppercase font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Ejecutado</p>
+                    <p className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{stats.pct.toFixed(0)}%</p>
+                  </div>
+                </div>
+
+                <p className={`text-[10px] font-bold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Vinculadas ({linked.length})</p>
+                <div className="space-y-1.5 mb-4">
+                  {linked.length === 0 && <p className="text-xs text-gray-400 py-1">Todavía no vinculaste ninguna categoría.</p>}
+                  {linked.map(c => (
+                    <div key={c.id} className={`flex justify-between items-center p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'}`}>
+                      <span className={`text-sm font-semibold capitalize ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                        {c.name} <span className={`text-[9px] font-bold uppercase ml-1 ${c.type === 'ingreso' ? 'text-green-500' : 'text-red-400'}`}>{c.type === 'ingreso' ? 'Ingreso' : 'Gasto'}</span>
+                      </span>
+                      <button onClick={() => handleUnlinkCategoryFromProfile(profile.id, c.id)} className="text-red-400 bg-red-500/10 hover:bg-red-500/20 w-7 h-7 rounded-full font-black text-sm flex items-center justify-center">−</button>
+                    </div>
+                  ))}
+                </div>
+
+                <p className={`text-[10px] font-bold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Categorías disponibles</p>
+                <input
+                  type="text"
+                  value={profileSearch}
+                  onChange={e => setProfileSearch(e.target.value)}
+                  placeholder="Buscar categoría..."
+                  className={`w-full mb-2 p-2.5 rounded-xl border text-sm outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'}`}
+                />
+                <div className="space-y-1.5">
+                  {available.length === 0 && <p className="text-xs text-gray-400 py-1">No hay categorías disponibles para vincular.</p>}
+                  {available.map(c => (
+                    <div key={c.id} className={`flex justify-between items-center p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'}`}>
+                      <span className={`text-sm font-semibold capitalize ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                        {c.name} <span className={`text-[9px] font-bold uppercase ml-1 ${c.type === 'ingreso' ? 'text-green-500' : 'text-red-400'}`}>{c.type === 'ingreso' ? 'Ingreso' : 'Gasto'}</span>
+                      </span>
+                      <button onClick={() => handleLinkCategoryToProfile(profile.id, c.id)} className="text-green-500 bg-green-500/10 hover:bg-green-500/20 w-7 h-7 rounded-full font-black text-sm flex items-center justify-center">+</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })() : (
+            <>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xs font-bold text-blue-500 uppercase tracking-wider">Perfiles de Presupuesto</h3>
+                <button 
+                  onClick={() => setIsAddingProfile(!isAddingProfile)}
+                  className="text-blue-500 font-semibold text-xs bg-blue-500/10 px-3 py-1.5 rounded-xl hover:bg-blue-500/20 transition-colors"
+                >
+                  {isAddingProfile ? 'Cancelar' : '+ Añadir'}
+                </button>
+              </div>
+
+              {isAddingProfile && (
+                <form onSubmit={handleAddProfile} className={`mb-4 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-gray-50 border-gray-100'} p-4 rounded-2xl border animate-in zoom-in-95 duration-200 space-y-2`}>
+                  <input type="text" placeholder="Nombre (ej. Gastos del Hogar)" value={newProfileName} onChange={e => setNewProfileName(e.target.value)} className={`p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm w-full outline-none`} required />
+                  <div className="flex gap-2">
+                    <select value={newProfileBudgetType} onChange={e => setNewProfileBudgetType(e.target.value)} className={`flex-1 p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm outline-none`}>
+                      <option value="fixed">Monto fijo ($)</option>
+                      <option value="percent">Porcentaje (%)</option>
+                    </select>
+                    <input type="text" inputMode="decimal" placeholder={newProfileBudgetType === 'percent' ? 'Ej. 30' : 'Ej. 200000'} value={newProfileBudgetValue} onChange={e => setNewProfileBudgetValue(e.target.value)} className={`flex-1 p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm outline-none`} />
+                  </div>
+                  <button type="submit" className="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-xl text-sm shadow-md shadow-blue-500/20 active:scale-95 transition-transform">Guardar</button>
+                </form>
+              )}
+
+              <div className="space-y-2">
+                {profiles.length === 0 && <p className="text-center text-xs text-gray-400 py-2">Todavía no creaste ningún perfil.</p>}
+                {profiles.map(p => {
+                  const stats = getProfileStats(p);
+                  return (
+                    <div key={p.id} className={`p-3 ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} rounded-xl border`}>
+                      {editingProfileId === p.id ? (
+                        <form onSubmit={(e) => handleSaveEditProfile(e, p.id)} className="space-y-2">
+                          <input type="text" value={editProfileName} onChange={e => setEditProfileName(e.target.value)} className={`p-2 rounded-lg border w-full text-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} outline-none`} required />
+                          <div className="flex gap-2">
+                            <select value={editProfileBudgetType} onChange={e => setEditProfileBudgetType(e.target.value)} className={`flex-1 p-2 rounded-lg border text-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} outline-none`}>
+                              <option value="fixed">Monto fijo ($)</option>
+                              <option value="percent">Porcentaje (%)</option>
+                            </select>
+                            <input type="text" inputMode="decimal" value={editProfileBudgetValue} onChange={e => setEditProfileBudgetValue(e.target.value)} className={`flex-1 p-2 rounded-lg border text-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} outline-none`} />
+                          </div>
+                          <div className="flex gap-2">
+                            <button type="submit" className="flex-1 bg-blue-600 text-white font-bold py-1.5 rounded-lg text-xs">Guardar</button>
+                            <button type="button" onClick={() => setEditingProfileId(null)} className={`flex-1 ${isDarkMode ? 'bg-slate-700 text-slate-200' : 'bg-gray-200 text-gray-700'} font-bold py-1.5 rounded-lg text-xs`}>Cancelar</button>
+                          </div>
+                        </form>
+                      ) : (
+                        <>
+                          <div className="flex justify-between items-center mb-2">
+                            <div className={`min-w-0 ${p.active === false ? 'opacity-50' : ''}`}>
+                              <p className={`text-sm font-bold truncate ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{p.name} {p.active === false && <span className="text-[9px] font-bold uppercase text-gray-400">(Inactivo)</span>}</p>
+                              <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                                {p.budgetType === 'percent' ? `${p.budgetValue || 0}% de ingresos` : formatCurrency(p.budgetValue || 0)} • {(p.categoryIds || []).length} categorías
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button onClick={() => handleToggleProfileActive(p.id)} className={`text-[10px] font-bold px-2 py-1.5 rounded-lg ${p.active === false ? 'bg-green-500/10 text-green-500' : (isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-gray-100 text-gray-500')}`}>
+                                {p.active === false ? 'Reactivar' : 'Desactivar'}
+                              </button>
+                              <button onClick={() => startEditingProfile(p)} className="text-blue-500 p-2 hover:bg-blue-500/10 rounded-lg"><EditIcon /></button>
+                              <button onClick={() => handleDeleteProfile(p.id)} className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-500/10 rounded-lg"><TrashIcon /></button>
+                            </div>
+                          </div>
+                          {stats.assigned > 0 && p.active !== false && (
+                            <div className={`w-full ${isDarkMode ? 'bg-slate-900' : 'bg-gray-200'} h-2 rounded-full overflow-hidden mb-2`}>
+                              <div className={`h-full rounded-full ${stats.pct >= 90 ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(stats.pct, 100)}%` }}></div>
+                            </div>
+                          )}
+                          <button onClick={() => setViewingProfileId(p.id)} className="w-full text-center text-xs font-bold text-blue-500 bg-blue-500/10 hover:bg-blue-500/20 py-2 rounded-lg transition-colors">
+                            Categorías vinculadas →
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
 
         <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-5 shadow-sm border mb-6`}>

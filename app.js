@@ -297,7 +297,7 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
     const [smartInputText, setSmartInputText] = useState('');
     const [smartFeedback, setSmartFeedback] = useState(null); // { type: 'error'|'info', text: '...' } | null
     
-    const availableCategories = categories.filter(c => c.type === (type === 'ahorro' ? 'gasto' : type));
+    const availableCategories = categories.filter(c => c.type === type);
     const [categoryId, setCategoryId] = useState(availableCategories.length > 0 ? availableCategories[0].id : '');
     const [typeClassification, setTypeClassification] = useState(typesList.length > 0 ? typesList[0].id : 'diario');
     const [methodId, setMethodId] = useState(paymentMethods.length > 0 ? paymentMethods[0].id : '');
@@ -444,7 +444,7 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
       }
 
       const shouldImputeTrip = imputeTrip && selectedTrip && type !== 'ahorro' && type !== 'transferencia';
-      const finalCategoryId = type === 'ahorro' ? 'ahorro' : type === 'transferencia' ? 'transferencia' : (shouldImputeTrip ? tripCategoryId : categoryId);
+      const finalCategoryId = type === 'ahorro' ? 'ahorro' : type === 'transferencia' ? (availableCategories.some(c => c.id === categoryId) ? categoryId : 'transferencia') : (shouldImputeTrip ? tripCategoryId : categoryId);
 
       const newTransaction = {
         id: Date.now(),
@@ -721,6 +721,22 @@ const AddTransaction = ({ categories, typesList, paymentMethods, bankAccounts, s
                     <p className="text-xs text-red-500 font-semibold bg-red-500/10 border border-red-500/20 rounded-xl p-2.5 mt-3">
                       La cuenta de origen y la cuenta de destino deben ser diferentes.
                     </p>
+                  )}
+
+                  {availableCategories.length > 0 && (
+                    <div className="mt-3">
+                      <label className={`block text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-1`}>Categoría (opcional)</label>
+                      <select 
+                        value={categoryId}
+                        onChange={(e) => setCategoryId(e.target.value)}
+                        className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-100 text-gray-800'} border rounded-xl p-2.5 text-sm outline-none capitalize focus:border-blue-300`}
+                      >
+                        <option value="">Sin categoría</option>
+                        {availableCategories.map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
                   )}
                 </div>
               )}
@@ -4024,13 +4040,12 @@ function ExpenseTrackerApp() {
               {isAddingCatReg && (
                 <form onSubmit={handleAddCategoryReg} className={`p-3 mb-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} space-y-2`}>
                   <input type="text" placeholder="Nombre" value={newCatRegName} onChange={e => setNewCatRegName(e.target.value)} className={`p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm w-full outline-none`} required />
-                  <div className="flex gap-2">
-                    <select value={newCatRegType} onChange={e => setNewCatRegType(e.target.value)} className={`flex-1 p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm outline-none`}>
-                      <option value="gasto">Gasto</option>
-                      <option value="ingreso">Ingreso</option>
-                    </select>
-                    <input type="text" inputMode="decimal" placeholder="Presupuesto (opcional)" value={newCatRegBudget} onChange={e => setNewCatRegBudget(e.target.value)} className={`flex-1 p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm outline-none`} />
-                  </div>
+                  <select value={newCatRegType} onChange={e => setNewCatRegType(e.target.value)} className={`w-full p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm outline-none`}>
+                    <option value="gasto">Gasto</option>
+                    <option value="ingreso">Ingreso</option>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="ahorro">Ahorro</option>
+                  </select>
                   <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-xl text-xs">Guardar categoría</button>
                 </form>
               )}
@@ -4040,13 +4055,12 @@ function ExpenseTrackerApp() {
                     {editingCatRegId === c.id ? (
                       <form onSubmit={(e) => handleSaveEditCatReg(e, c.id)} className="space-y-2">
                         <input type="text" value={editCatRegName} onChange={e => setEditCatRegName(e.target.value)} className={`p-2 rounded-lg border w-full text-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} outline-none`} required />
-                        <div className="flex gap-2">
-                          <select value={editCatRegType} onChange={e => setEditCatRegType(e.target.value)} className={`flex-1 p-2 rounded-lg border text-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} outline-none`}>
-                            <option value="gasto">Gasto</option>
-                            <option value="ingreso">Ingreso</option>
-                          </select>
-                          <input type="text" inputMode="decimal" placeholder="Presupuesto" value={editCatRegBudget} onChange={e => setEditCatRegBudget(e.target.value)} className={`flex-1 p-2 rounded-lg border text-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} outline-none`} />
-                        </div>
+                        <select value={editCatRegType} onChange={e => setEditCatRegType(e.target.value)} className={`w-full p-2 rounded-lg border text-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} outline-none`}>
+                          <option value="gasto">Gasto</option>
+                          <option value="ingreso">Ingreso</option>
+                          <option value="transferencia">Transferencia</option>
+                          <option value="ahorro">Ahorro</option>
+                        </select>
                         <div className="flex gap-2">
                           <button type="submit" className="flex-1 bg-blue-600 text-white font-bold py-1.5 rounded-lg text-xs">Guardar</button>
                           <button type="button" onClick={() => setEditingCatRegId(null)} className={`flex-1 ${isDarkMode ? 'bg-slate-700 text-slate-200' : 'bg-gray-200 text-gray-700'} font-bold py-1.5 rounded-lg text-xs`}>Cancelar</button>
@@ -4056,7 +4070,7 @@ function ExpenseTrackerApp() {
                       <div className="flex justify-between items-center">
                         <div className="min-w-0">
                           <p className={`text-sm font-bold truncate ${isDarkMode ? 'text-white' : 'text-gray-800'} capitalize`}>{c.name}</p>
-                          <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize`}>{c.type} {c.budget > 0 ? `• Presupuesto: ${formatCurrency(c.budget)}` : ''}</p>
+                          <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize`}>{c.type}</p>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           <button onClick={() => startEditingCatReg(c)} className="text-blue-500 p-2 hover:bg-blue-500/10 rounded-lg"><EditIcon /></button>
@@ -4707,6 +4721,76 @@ function ExpenseTrackerApp() {
             onCommit={(val) => setSettings({ ...settings, geminiApiKey: val })}
             className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-3 outline-none text-sm font-semibold`}
           />
+        </div>
+
+        <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-5 shadow-sm border mb-6`}>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xs font-bold text-blue-500 uppercase tracking-wider">Categorías</h3>
+            <button 
+              onClick={() => setIsAddingCategory(!isAddingCategory)}
+              className="text-blue-500 font-semibold text-xs bg-blue-500/10 px-3 py-1.5 rounded-xl hover:bg-blue-500/20 transition-colors"
+            >
+              {isAddingCategory ? 'Cancelar' : '+ Añadir'}
+            </button>
+          </div>
+
+          {isAddingCategory && (
+            <form onSubmit={handleAddCategory} className={`mb-4 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-gray-50 border-gray-100'} p-4 rounded-2xl border animate-in zoom-in-95 duration-200`}>
+              <label className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} font-bold block mb-1`}>Tipo de movimiento</label>
+              <select value={newCatType} onChange={e => setNewCatType(e.target.value)} className={`p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm w-full mb-2 outline-none`}>
+                <option value="gasto">Gasto</option>
+                <option value="ingreso">Ingreso</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="ahorro">Ahorro</option>
+              </select>
+              <label className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} font-bold block mb-1`}>Nombre</label>
+              <input type="text" placeholder="Ej. Supermercado" value={newCatName} onChange={e => setNewCatName(e.target.value)} className={`p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm w-full mb-3 outline-none`} required />
+              <button type="submit" className="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-xl text-sm shadow-md shadow-blue-500/20 active:scale-95 transition-transform">Guardar</button>
+            </form>
+          )}
+
+          <div className="space-y-2">
+            {categories.length === 0 && <p className="text-center text-xs text-gray-400 py-2">Todavía no creaste categorías.</p>}
+            {['gasto', 'ingreso', 'transferencia', 'ahorro'].map(t => {
+              const catsOfType = categories.filter(c => c.type === t);
+              if (catsOfType.length === 0) return null;
+              const typeLabel = { gasto: 'Gasto', ingreso: 'Ingreso', transferencia: 'Transferencia', ahorro: 'Ahorro' }[t];
+              return (
+                <div key={t} className="mb-3">
+                  <p className={`text-[10px] font-bold uppercase tracking-wider mb-1.5 ${isDarkMode ? 'text-slate-500' : 'text-gray-400'}`}>{typeLabel}</p>
+                  <div className="space-y-2">
+                    {catsOfType.map(c => (
+                      <div key={c.id} className={`flex flex-col p-3 ${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} rounded-xl border`}>
+                        {editingCategoryId === c.id ? (
+                          <form onSubmit={(e) => handleSaveEditCategory(e, c.id)} className="space-y-2">
+                            <input type="text" value={editCatName} onChange={e => setEditCatName(e.target.value)} className={`p-2 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm w-full outline-none`} required />
+                            <select value={editCatType} onChange={e => setEditCatType(e.target.value)} className={`p-2 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} text-sm w-full outline-none`}>
+                              <option value="gasto">Gasto</option>
+                              <option value="ingreso">Ingreso</option>
+                              <option value="transferencia">Transferencia</option>
+                              <option value="ahorro">Ahorro</option>
+                            </select>
+                            <div className="flex gap-2">
+                              <button type="submit" className="flex-1 text-blue-400 bg-blue-500/10 p-2 rounded-lg text-xs font-bold">Guardar</button>
+                              <button type="button" onClick={() => setEditingCategoryId(null)} className={`flex-1 p-2 rounded-lg text-xs font-bold ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-gray-200 text-gray-700'}`}>Cancelar</button>
+                            </div>
+                          </form>
+                        ) : (
+                          <div className="flex justify-between items-center">
+                            <p className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'} capitalize`}>{c.name}</p>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => startEditingCategory(c)} className="text-blue-500 p-2 hover:bg-blue-500/10 rounded-lg"><EditIcon /></button>
+                              <button onClick={() => handleDeleteCategory(c.id)} className="text-red-400 p-2 hover:bg-red-500/10 rounded-lg"><TrashIcon /></button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-3xl p-5 shadow-sm border mb-6`}>

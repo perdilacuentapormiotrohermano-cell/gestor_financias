@@ -963,7 +963,10 @@ const BudgetPlansView = ({ isDarkMode, categories, budgetPlans, setBudgetPlans, 
                 <div key={g.id} className={`${isDarkMode ? 'bg-slate-800/60 border-slate-800' : 'bg-gray-50 border-gray-100'} border rounded-2xl p-3 space-y-2`}>
                   <div className="flex gap-2">
                     <input type="text" value={g.name} onChange={e => updateGroup(idx, { name: e.target.value })} placeholder="Nombre del grupo (ej. Ahorro)" className={`flex-1 ${inputCls} border rounded-xl p-2.5 outline-none text-sm font-bold`} />
-                    <input type="text" inputMode="decimal" value={g.percent} onChange={e => updateGroup(idx, { percent: e.target.value })} placeholder="%" className={`w-16 ${inputCls} border rounded-xl p-2.5 outline-none text-sm font-bold text-center`} />
+                    <div className="relative w-20 shrink-0">
+                      <input type="text" inputMode="decimal" value={g.percent} onChange={e => updateGroup(idx, { percent: e.target.value })} placeholder="Ej: 50" className={`w-full ${inputCls} border rounded-xl p-2.5 pr-6 outline-none text-sm font-bold text-center`} />
+                      <span className={`absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold pointer-events-none ${labelCls}`}>%</span>
+                    </div>
                     {formGroups.length > 1 && (
                       <button type="button" onClick={() => setFormGroups(formGroups.filter((_, i) => i !== idx))} className="text-gray-400 hover:text-red-500 px-1"><TrashIcon /></button>
                     )}

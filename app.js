@@ -191,9 +191,17 @@ const AccountWheelPicker = ({ items, selectedId, onSelect, orientation = 'horizo
   const scrollRef = React.useRef(null);
   const settleTimer = React.useRef(null);
   const didInit = React.useRef(false);
+  const rafPending = React.useRef(false);
 
   const n = items.length;
   const midRep = Math.floor(REPEAT / 2);
+
+  // Resaltado "en vivo": sigue a la tarjeta más cercana al centro mientras se desliza,
+  // independiente de selectedId (que recién se confirma cuando el scroll termina de asentar).
+  // Esto evita que, durante la inercia del scroll en iOS, se vea un instante sin ninguna
+  // tarjeta marcada.
+  const [liveCenterId, setLiveCenterId] = React.useState(selectedId);
+  React.useEffect(() => { setLiveCenterId(selectedId); }, [selectedId]);
 
   const repeated = [];
   for (let r = 0; r < REPEAT; r++) {
@@ -215,15 +223,31 @@ const AccountWheelPicker = ({ items, selectedId, onSelect, orientation = 'horizo
     // eslint-disable-next-line
   }, [n]);
 
+  const getCenteredItem = () => {
+    const el = scrollRef.current;
+    if (!el || n === 0) return null;
+    const pos = isHorizontal ? el.scrollLeft : el.scrollTop;
+    const rawIndex = Math.round(pos / step);
+    const itemIndex = ((rawIndex % n) + n) % n;
+    return { rawIndex, itemIndex, item: items[itemIndex] };
+  };
+
   const handleScroll = () => {
+    // Actualiza el resaltado visual en cada frame (liviano, sin tocar el estado del padre)
+    if (!rafPending.current) {
+      rafPending.current = true;
+      requestAnimationFrame(() => {
+        const res = getCenteredItem();
+        if (res && res.item) setLiveCenterId(res.item.id);
+        rafPending.current = false;
+      });
+    }
+
     if (settleTimer.current) clearTimeout(settleTimer.current);
     settleTimer.current = setTimeout(() => {
-      const el = scrollRef.current;
-      if (!el || n === 0) return;
-      const pos = isHorizontal ? el.scrollLeft : el.scrollTop;
-      const rawIndex = Math.round(pos / step);
-      const itemIndex = ((rawIndex % n) + n) % n;
-      const chosen = items[itemIndex];
+      const res = getCenteredItem();
+      if (!res) return;
+      const { rawIndex, itemIndex, item: chosen } = res;
       if (chosen && chosen.id !== selectedId) onSelect(chosen.id);
 
       const lowBound = n * 2;
@@ -231,7 +255,7 @@ const AccountWheelPicker = ({ items, selectedId, onSelect, orientation = 'horizo
       if (rawIndex < lowBound || rawIndex > highBound) {
         scrollToIndex(midRep * n + itemIndex, false);
       }
-    }, 120);
+    }, 160);
   };
 
   if (n === 0) return null;
@@ -244,13 +268,16 @@ const AccountWheelPicker = ({ items, selectedId, onSelect, orientation = 'horizo
       style={{
         gap: `${gap}px`,
         scrollSnapType: isHorizontal ? 'x mandatory' : 'y mandatory',
+        WebkitOverflowScrolling: 'touch',
+        touchAction: isHorizontal ? 'pan-x' : 'pan-y',
+        overscrollBehavior: 'contain',
         ...(isHorizontal
           ? { paddingLeft: `calc(50% - ${cardMain / 2}px)`, paddingRight: `calc(50% - ${cardMain / 2}px)` }
           : { paddingTop: `calc(50% - ${cardMain / 2}px)`, paddingBottom: `calc(50% - ${cardMain / 2}px)`, height: '220px', width: '100%' })
       }}
     >
       {repeated.map(it => {
-        const isSelected = it.id === selectedId;
+        const isSelected = it.id === liveCenterId;
         const isBlocked = blockedId && it.id === blockedId;
         const shortLabel = { credito: 'Crédito', cuenta: 'Cuenta', efectivo: 'Efectivo', inversion: 'Inversión' }[it.type] || 'Cuenta';
         const bal = getAccountBalance ? getAccountBalance(it.id) : 0;
@@ -261,6 +288,7 @@ const AccountWheelPicker = ({ items, selectedId, onSelect, orientation = 'horizo
             onClick={() => {
               if (isBlocked) return;
               scrollToIndex(it._rep * n + it._idx, true);
+              setLiveCenterId(it.id);
               onSelect(it.id);
             }}
             style={{ scrollSnapAlign: 'center', width: isHorizontal ? `${cardMain}px` : '100%', height: isHorizontal ? `${cardCross}px` : `${cardMain}px` }}

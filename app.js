@@ -3329,6 +3329,53 @@ function ExpenseTrackerApp() {
           </div>
         )}
 
+        {(() => {
+          const activeBudgetPlan = budgetPlans.find(p => p.status === 'activo');
+          if (!activeBudgetPlan) return null;
+          const baseIncome = getPlanBaseIncome(activeBudgetPlan);
+          const totalAssigned = (activeBudgetPlan.groups || []).reduce((s, g) => s + baseIncome * ((parseFloat(g.percent) || 0) / 100), 0);
+          return (
+            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-5 text-white shadow-lg">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] uppercase tracking-wider text-blue-100 font-bold">Presupuesto activo</p>
+                <button onClick={() => { setActiveTab('history'); setSubTab('presupuestos'); }} className="text-[10px] font-bold bg-black/20 px-2.5 py-1 rounded-full shrink-0">Ver presupuesto</button>
+              </div>
+              <h3 className="text-xl font-black mb-3">{activeBudgetPlan.name}</h3>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div>
+                  <p className="text-[10px] text-blue-100">Ingreso base</p>
+                  <p className="text-base font-bold">{formatCurrency(baseIncome)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-blue-100">Total presupuestado</p>
+                  <p className="text-base font-bold">{formatCurrency(totalAssigned)}</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {(activeBudgetPlan.groups || []).map(g => {
+                  const stats = getGroupStats(activeBudgetPlan, g);
+                  return (
+                    <div key={g.id} className="bg-white/10 rounded-2xl p-3 backdrop-blur-sm">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-sm font-bold">{g.name}</span>
+                        <span className="text-xs font-black bg-white/20 px-2 py-0.5 rounded-full">{g.percent}%</span>
+                      </div>
+                      <p className="text-xs text-blue-100 mb-1">{formatCurrency(stats.assigned)}</p>
+                      <div className="flex justify-between text-[11px] text-blue-50 mb-1.5">
+                        <span>Gastado/Ahorrado: {formatCurrency(stats.spent)}</span>
+                        <span className={stats.available < 0 ? 'text-red-300 font-bold' : ''}>Disponible: {formatCurrency(stats.available)}</span>
+                      </div>
+                      <div className="w-full bg-black/20 h-2 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${stats.pct >= 90 ? 'bg-red-400' : 'bg-white'}`} style={{ width: `${Math.min(stats.pct, 100)}%` }}></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
         <div>
           <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'} mb-4`}>Mis Cuentas y Tarjetas</h3>
           <div className="flex overflow-x-auto gap-3 pb-2 -mx-4 px-4 snap-x snap-mandatory no-scrollbar">

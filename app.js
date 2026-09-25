@@ -4966,6 +4966,26 @@ function ExpenseTrackerApp() {
     const [authPassword, setAuthPassword] = useState('');
     const [authError, setAuthError] = useState('');
     const [authSubmitting, setAuthSubmitting] = useState(false);
+    const [resetSent, setResetSent] = useState(false);
+    const [resetSubmitting, setResetSubmitting] = useState(false);
+
+    const handleForgotPassword = async () => {
+      setAuthError('');
+      setResetSent(false);
+      if (!authEmail.trim()) {
+        setAuthError('Escribí tu email arriba primero, y después tocá "¿Olvidaste tu contraseña?".');
+        return;
+      }
+      setResetSubmitting(true);
+      try {
+        await firebase.auth().sendPasswordResetEmail(authEmail.trim());
+        setResetSent(true);
+      } catch (err) {
+        setAuthError(translateAuthError(err.code));
+      } finally {
+        setResetSubmitting(false);
+      }
+    };
 
     const handleAuthSubmit = async (e) => {
       e.preventDefault();
@@ -5158,6 +5178,23 @@ function ExpenseTrackerApp() {
                 required
                 minLength={6}
               />
+
+              {authMode === 'login' && (
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  disabled={resetSubmitting}
+                  className="text-xs text-blue-400 font-semibold text-right -mt-2 disabled:opacity-50"
+                >
+                  {resetSubmitting ? 'Enviando...' : '¿Olvidaste tu contraseña?'}
+                </button>
+              )}
+
+              {resetSent && (
+                <p className="text-xs text-green-500 font-medium bg-green-500/10 border border-green-500/20 rounded-xl p-2.5">
+                  Te mandamos un mail a {authEmail} con el link para poner una contraseña nueva. Revisá también la carpeta de spam.
+                </p>
+              )}
 
               {authError && (
                 <p className="text-xs text-red-500 font-medium bg-red-500/10 border border-red-500/20 rounded-xl p-2.5">{authError}</p>

@@ -36,6 +36,521 @@
     });
   };
 
+
+  // ---------- Utilidades ----------
+  const pad = (n) => String(n).padStart(2, '0');
+  const fmt2 = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 });
+  const fmt1 = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 });
+  const cleanObj = (o) => JSON.parse(JSON.stringify(o));
+  const byNum = (x, y) => x - y;
+  const slug = (n) => {
+    const s = String(n).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return s || 'activo';
+  };
+  // Acepta "1.234,56", "1234,56", "1234.56", "$ 1.234"
+  const parseNum = (s) => {
+    s = String(s == null ? '' : s).replace(/[$\s]/g, '');
+    if (!s) return null;
+    if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
+    else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+    const n = Number(s);
+    return isFinite(n) ? n : NaN;
+  };
+  const numToText = (v) => String(v).replace('.', ',');
+  const fdate = (f) => { const p = String(f).split('-'); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : f; };
+  const catIdx = (c) => { const i = CATS.findIndex((x) => x[0] === c); return i < 0 ? 99 : i; };
+  const MESC = MES.map((m) => m.charAt(0).toUpperCase() + m.slice(1));
+
+  // ---------- Modelo de datos (igual que la app de inversiones) ----------
+  const soldIdx = (a) => {
+    if (!a || !a.vendido) return null;
+    const q = String(a.vendido).split('-');
+    const yy = Number(q[0]), mm = Number(q[1]) - 1;
+    return (isFinite(yy) && isFinite(mm)) ? yy * 12 + mm : null;
+  };
+  const soldYear = (a) => { const i = soldIdx(a); return i == null ? null : Math.floor(i / 12); };
+  const heldIn = (a, m, y) => { const i = soldIdx(a); return i == null || (y * 12 + m) < i; };
+  const monthVal = (a, m, y) => {
+    if (!heldIn(a, m, y)) return null;
+    const p = y + '-' + pad(m + 1);
+    let best = null;
+    (a.lecturas || []).forEach((r) => { if (r.f.indexOf(p) === 0 && (!best || r.f >= best.f)) best = r; });
+    return best;
+  };
+  const hasReadings = (a, y) => (a.lecturas || []).some((r) => r.f.indexOf(y + '-') === 0);
+  const visibleIn = (a, y) => {
+    const sy = soldYear(a);
+    if (sy != null && y > sy) return false;
+    return (a.anios || []).indexOf(y) >= 0 || hasReadings(a, y);
+  };
+  const yearClose = (activos, y) => {
+    const ids = Object.keys(activos);
+    for (let m = 11; m >= 0; m--) {
+      let t = null;
+      ids.forEach((id) => { const r = monthVal(activos[id], m, y); if (r) t = (t || 0) + r.v; });
+      if (t != null) return t;
+    }
+    return null;
+  };
+  const buildModel = (activos, aportesAll, year) => {
+    const list = Object.keys(activos).map((id) => ({ ...cleanObj(activos[id]), id })).filter((a) => visibleIn(a, year));
+    list.sort((a, b) => catIdx(a.categoria) - catIdx(b.categoria) || (a.orden || 0) - (b.orden || 0) || String(a.nombre).localeCompare(b.nombre));
+    const vals = {}, totals = [], cats = {};
+    for (let m = 0; m < 12; m++) totals.push(null);
+    CATS.forEach((c) => { cats[c[0]] = totals.slice(); });
+    list.forEach((a) => {
+      vals[a.id] = [];
+      for (let m = 0; m < 12; m++) {
+        const r = monthVal(a, m, year);
+        vals[a.id].push(r);
+        if (r) {
+          totals[m] = (totals[m] || 0) + r.v;
+          if (cats[a.categoria]) cats[a.categoria][m] = (cats[a.categoria][m] || 0) + r.v;
+        }
+      }
+    });
+    const ya = aportesAll[year] || {};
+    const apm = ya.m || {};
+    const ap = [];
+    for (let m = 0; m < 12; m++) { const v = apm[pad(m + 1)]; ap.push(typeof v === 'number' ? v : null); }
+    const iniSet = typeof ya.inicio === 'number' ? ya.inicio : null;
+    const iniAuto = yearClose(activos, year - 1);
+    const ini = iniSet != null ? iniSet : iniAuto;
+    const gains = totals.map((t, m) => {
+      if (t == null) return null;
+      const p = m === 0 ? ini : totals[m - 1];
+      return p == null ? null : t - p - (ap[m] || 0);
+    });
+    let latest = -1;
+    totals.forEach((t, m) => { if (t != null) latest = m; });
+    return { list, vals, totals, cats, ap, ini, iniSet, iniAuto, gains, latest };
+  };
+  // Último valor cargado antes de ese mes (hasta 24 meses atrás)
+  const prevReading = (a, m, y) => {
+    for (let k = 1; k <= 24; k++) {
+      let mm = m - k, yy = y;
+      while (mm < 0) { mm += 12; yy--; }
+      const r = monthVal(a, mm, yy);
+      if (r) return { v: r.v, m: mm, y: yy };
+    }
+    return null;
+  };
+  const defaultDate = (m, y) => {
+    const t = new Date();
+    const cur = t.getFullYear() === y ? t.getMonth() : -1;
+    if (m == null || m === cur) {
+      if (t.getFullYear() < y) return y + '-01-01';
+      if (t.getFullYear() > y) return y + '-12-31';
+      return y + '-' + pad(t.getMonth() + 1) + '-' + pad(t.getDate());
+    }
+    return y + '-' + pad(m + 1) + '-' + pad(new Date(y, m + 1, 0).getDate());
+  };
+
+  // ---------- Piezas de interfaz ----------
+  const Delta = ({ v, money: withMoney }) => {
+    if (v == null) return <span className="opacity-50">—</span>;
+    const cls = v > 0 ? 'text-green-500' : v < 0 ? 'text-red-500' : '';
+    return <span className={cls}>{v > 0 ? '▲' : v < 0 ? '▼' : '●'} {withMoney ? '$ ' : ''}{fmt0.format(Math.abs(v))}</span>;
+  };
+  const pctText = (v) => (v == null || !isFinite(v)) ? '' : (v > 0 ? '+' : v < 0 ? '-' : '') + fmt1.format(Math.abs(v)) + ' %';
+
+  const Sheet = ({ isDarkMode, title, subtitle, onClose, children }) => ReactDOM.createPortal(
+    <div className={isDarkMode ? 'app-dark' : ''}>
+      <div className="fixed inset-0 bg-black/60 z-[60] flex items-end sm:items-center justify-center" onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()}
+          className={`w-full sm:max-w-md max-h-[90vh] overflow-y-auto ${isDarkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-gray-900'} rounded-t-3xl sm:rounded-3xl p-5 pb-8 shadow-xl`}>
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="min-w-0">
+              <h3 className="font-bold text-lg truncate">{title}</h3>
+              {subtitle && <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>{subtitle}</p>}
+            </div>
+            <button onClick={onClose} aria-label="Cerrar"
+              className={`${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-gray-100 text-gray-600'} w-8 h-8 rounded-full text-xl leading-none shrink-0`}>×</button>
+          </div>
+          {children}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+
+  // Valor de un activo en un mes: se toca, se escribe y Enter
+  const ValueCell = ({ value, isDarkMode, label, onCommit }) => {
+    const [editing, setEditing] = useState(false);
+    const [txt, setTxt] = useState('');
+    const done = useRef(false);
+    const start = () => { done.current = false; setTxt(value != null ? numToText(value) : ''); setEditing(true); };
+    const finish = (cancel) => {
+      if (done.current) return;
+      done.current = true;
+      setEditing(false);
+      if (!cancel) onCommit(txt.trim());
+    };
+    if (editing) {
+      return (
+        <input autoFocus inputMode="decimal" autoComplete="off" aria-label={label} value={txt}
+          onChange={(e) => setTxt(e.target.value)}
+          onFocus={(e) => e.target.select()}
+          onBlur={() => finish(false)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); finish(false); } else if (e.key === 'Escape') finish(true); }}
+          className={`${isDarkMode ? 'bg-slate-800 border-blue-500 text-white' : 'bg-white border-blue-500 text-gray-900'} w-32 text-right border-2 rounded-lg px-2 py-1 text-sm font-semibold outline-none`} />
+      );
+    }
+    return (
+      <button onClick={start} aria-label={label}
+        className={`${value == null ? (isDarkMode ? 'text-slate-500' : 'text-gray-400') : (isDarkMode ? 'text-white' : 'text-gray-900')} text-sm font-semibold px-2 py-1 rounded-lg min-w-[5rem] text-right ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-gray-100'}`}>
+        {value == null ? '—' : '$ ' + fmt2.format(value)}
+      </button>
+    );
+  };
+
+  const fieldCls = (dark) => `${dark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} w-full border rounded-xl p-3 text-base outline-none focus:border-blue-500`;
+  const lblCls = (dark) => `block text-xs font-bold uppercase tracking-wider mb-1 ${dark ? 'text-slate-400' : 'text-gray-500'}`;
+
+
+  // ---------- Hoja: un activo (nombre, tipo, valores, vendido, eliminar) ----------
+  const AssetSheet = ({ isDarkMode, asset, year, years, onClose, writeAsset, deleteAsset, toastUndo, notify, btn, btn2 }) => {
+    const a = asset;
+    const [name, setName] = useState(a.nombre);
+    const [sellM, setSellM] = useState(year === new Date().getFullYear() ? new Date().getMonth() : 11);
+    const [sellY, setSellY] = useState(year);
+    const [sure, setSure] = useState(false);
+    const txt = isDarkMode ? 'text-white' : 'text-gray-900';
+    const sub = isDarkMode ? 'text-slate-400' : 'text-gray-500';
+    const L = (a.lecturas || []).filter((r) => r.f.indexOf(year + '-') === 0).slice().reverse();
+    const yrs = years.filter((y) => visibleIn(a, y));
+    const sIdx = soldIdx(a);
+    const sLbl = sIdx != null ? `${MES[sIdx % 12]} ${Math.floor(sIdx / 12)}` : '';
+
+    const saveName = () => {
+      const n = name.trim();
+      if (!n) { setName(a.nombre); return; }
+      if (n !== a.nombre) writeAsset(a.id, { ...a, nombre: n });
+    };
+    const delReading = (f) => writeAsset(a.id, { ...a, lecturas: (a.lecturas || []).filter((r) => r.f !== f) });
+    const sell = () => {
+      const old = { ...a };
+      writeAsset(a.id, { ...a, vendido: sellY + '-' + pad(sellM + 1) });
+      onClose();
+      toastUndo(`«${a.nombre}» vendido desde ${MES[sellM]} ${sellY}`, () => writeAsset(a.id, old));
+    };
+    const unsell = () => {
+      const old = { ...a };
+      const o = { ...a }; delete o.vendido;
+      writeAsset(a.id, o);
+      onClose();
+      toastUndo(`«${a.nombre}» volvió a tu cartera`, () => writeAsset(a.id, old));
+    };
+    const remove = () => {
+      if (!sure) { setSure(true); return; }
+      deleteAsset(a.id);
+      onClose();
+      notify('Se eliminó el activo');
+    };
+
+    return (
+      <Sheet isDarkMode={isDarkMode} title={a.nombre} subtitle={`Aparece en: ${yrs.length ? yrs.join(', ') : 'ningún año'}.${sLbl ? ' Vendido desde ' + sLbl + '.' : ''}`} onClose={onClose}>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={lblCls(isDarkMode)}>Nombre</label>
+              <input value={name} maxLength={40} onChange={(e) => setName(e.target.value)} onBlur={saveName} className={fieldCls(isDarkMode)} />
+            </div>
+            <div>
+              <label className={lblCls(isDarkMode)}>Tipo</label>
+              <select value={a.categoria} onChange={(e) => writeAsset(a.id, { ...a, categoria: e.target.value })} className={fieldCls(isDarkMode)}>
+                {CATS.map((c) => <option key={c[0]} value={c[0]}>{c[1]}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <p className={lblCls(isDarkMode)}>Valores cargados en {year}</p>
+            {!L.length && <p className={`text-xs ${sub}`}>No hay valores en este año.</p>}
+            <div className="space-y-1">
+              {L.map((r) => (
+                <div key={r.f} className="flex items-center justify-between text-sm">
+                  <span className={txt}>{fdate(r.f)} · <b>$ {fmt2.format(r.v)}</b></span>
+                  <button onClick={() => delReading(r.f)} className="text-xs font-bold text-red-500 px-2 py-1">Borrar</button>
+                </div>
+              ))}
+            </div>
+            <p className={`text-xs mt-2 ${sub}`}>Para cambiar un valor, cerrá esta ventana y tocalo en el mes.</p>
+          </div>
+
+          {sLbl ? (
+            <div className={`${isDarkMode ? 'bg-slate-800' : 'bg-gray-50'} rounded-xl p-3 space-y-2`}>
+              <p className={`text-sm font-bold ${txt}`}>Vendido</p>
+              <p className={`text-xs ${sub}`}>Desde {sLbl} ya no suma al total y no aparece en los años siguientes. Conservás todo su historial.</p>
+              <button onClick={unsell} className={btn2}>Volver a tenerlo</button>
+            </div>
+          ) : (
+            <div className={`${isDarkMode ? 'bg-slate-800' : 'bg-gray-50'} rounded-xl p-3 space-y-3`}>
+              <div>
+                <p className={`text-sm font-bold ${txt}`}>¿Lo vendiste?</p>
+                <p className={`text-xs mt-1 ${sub}`}>Desde el mes que elijas deja de sumar al total y no aparece en los años siguientes. Si sacaste esa plata de tus inversiones, escribila en negativo en «Pusiste este mes», así la ganancia no sale como pérdida.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <select value={sellM} onChange={(e) => setSellM(Number(e.target.value))} className={fieldCls(isDarkMode)}>
+                  {MESC.map((n, i) => <option key={i} value={i}>{n}</option>)}
+                </select>
+                <select value={sellY} onChange={(e) => setSellY(Number(e.target.value))} className={fieldCls(isDarkMode)}>
+                  {years.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              <button onClick={sell} className={btn2}>Marcar como vendido</button>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={remove} className={`flex-1 border border-red-500/40 text-red-500 font-bold py-2.5 rounded-xl text-sm ${sure ? 'bg-red-500/10' : ''}`}>
+              {sure ? 'Tocá otra vez para eliminar' : 'Eliminar de todos los años'}
+            </button>
+            <button onClick={onClose} className={btn}>Listo</button>
+          </div>
+        </div>
+      </Sheet>
+    );
+  };
+
+  // ---------- Hoja: qué activos tenías este año + agregar uno nuevo ----------
+  const ActivosSheet = ({ isDarkMode, activos, year, onClose, applyOps, notify, btn, btn2 }) => {
+    const [checks, setChecks] = useState({});
+    const [newName, setNewName] = useState('');
+    const [newCat, setNewCat] = useState(CATS[0][0]);
+    const [msg, setMsg] = useState('');
+    const txt = isDarkMode ? 'text-white' : 'text-gray-900';
+    const sub = isDarkMode ? 'text-slate-400' : 'text-gray-500';
+    const list = Object.keys(activos).map((id) => ({ id, a: activos[id] }))
+      .sort((x, y) => catIdx(x.a.categoria) - catIdx(y.a.categoria) || (x.a.orden || 0) - (y.a.orden || 0) || String(x.a.nombre).localeCompare(String(y.a.nombre)));
+    const copiables = list.filter((x) => visibleIn(x.a, year - 1) && !visibleIn(x.a, year) && !(soldYear(x.a) != null && soldYear(x.a) < year));
+
+    const isOn = (x) => (x.id in checks ? checks[x.id] : visibleIn(x.a, year));
+    const withYear = (a, on) => {
+      const ys = (a.anios || []).filter((y) => y !== year);
+      if (on) ys.push(year);
+      return { ...a, anios: ys.sort(byNum) };
+    };
+    const copyPrev = () => {
+      const ops = copiables.map((x) => ({ type: 'set', col: 'activos', id: x.id, obj: withYear(x.a, true) }));
+      applyOps(ops);
+      onClose();
+      notify(ops.length ? `Se agregaron ${ops.length} activos a ${year}` : 'No había activos para copiar');
+    };
+    const save = () => {
+      const ops = [];
+      list.forEach((x) => {
+        if (!(x.id in checks) || hasReadings(x.a, year)) return;
+        const has = (x.a.anios || []).indexOf(year) >= 0;
+        if (checks[x.id] === has) return;
+        ops.push({ type: 'set', col: 'activos', id: x.id, obj: withYear(x.a, checks[x.id]) });
+      });
+      const n = newName.trim();
+      if (n) {
+        let id = slug(n); const base = id; let k = 2;
+        while (activos[id]) id = base + '-' + (k++);
+        let orden = 0;
+        Object.keys(activos).forEach((i) => { const a = activos[i]; if (a.categoria === newCat && (a.orden || 0) > orden) orden = a.orden; });
+        ops.push({ type: 'set', col: 'activos', id, obj: { nombre: n, categoria: newCat, orden: orden + 1, lecturas: [], anios: [year] } });
+      }
+      if (ops.length) applyOps(ops);
+      onClose();
+      notify(ops.length ? 'Cambios guardados' : 'No hubo cambios');
+    };
+
+    return (
+      <Sheet isDarkMode={isDarkMode} title={`Activos de ${year}`} subtitle={`Tildá los que tenías en ${year}. Los que no tildes no aparecen en este año.`} onClose={onClose}>
+        <div className="space-y-4">
+          {!list.length && <p className={`text-sm ${sub}`}>Todavía no cargaste ningún activo.</p>}
+          {copiables.length > 0 && (
+            <button onClick={copyPrev} className={btn2}>Copiar {copiables.length} {copiables.length === 1 ? 'activo' : 'activos'} de {year - 1}</button>
+          )}
+          {CATS.map((c) => {
+            const rows = list.filter((x) => x.a.categoria === c[0] && !(soldYear(x.a) != null && soldYear(x.a) < year));
+            if (!rows.length) return null;
+            return (
+              <div key={c[0]}>
+                <p className={lblCls(isDarkMode)}>{c[1]}</p>
+                <div className="space-y-1">
+                  {rows.map((x) => {
+                    const has = hasReadings(x.a, year);
+                    return (
+                      <label key={x.id} className="flex items-center gap-3 py-1.5">
+                        <input type="checkbox" className="w-5 h-5 accent-blue-600" checked={isOn(x)} disabled={has}
+                          onChange={(e) => setChecks((s) => ({ ...s, [x.id]: e.target.checked }))} />
+                        <span className={`text-sm font-medium ${txt}`}>{x.a.nombre}</span>
+                        {has && <span className={`text-[10px] ${sub}`}>tiene valores en {year}</span>}
+                        {!has && soldIdx(x.a) != null && <span className={`text-[10px] ${sub}`}>vendido en {MES[soldIdx(x.a) % 12]} {Math.floor(soldIdx(x.a) / 12)}</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          <div>
+            <p className={lblCls(isDarkMode)}>Agregar un activo nuevo</p>
+            <div className="grid grid-cols-2 gap-3">
+              <input value={newName} maxLength={40} placeholder="Ej.: Meli" onChange={(e) => setNewName(e.target.value)} className={fieldCls(isDarkMode)} />
+              <select value={newCat} onChange={(e) => setNewCat(e.target.value)} className={fieldCls(isDarkMode)}>
+                {CATS.map((c) => <option key={c[0]} value={c[0]}>{c[1]}</option>)}
+              </select>
+            </div>
+            <p className={`text-xs mt-2 ${sub}`}>Se agrega a {year}. Después cargale el valor tocándolo en el mes.</p>
+          </div>
+          {msg && <p className="text-xs text-orange-500 font-medium">{msg}</p>}
+          <div className="flex gap-2">
+            <button onClick={onClose} className={btn2}>Cancelar</button>
+            <button onClick={save} className={btn}>Guardar</button>
+          </div>
+        </div>
+      </Sheet>
+    );
+  };
+
+  // ---------- Hoja: "Cargar el mes" paso a paso ----------
+  const MonthWizard = ({ isDarkMode, activos, aportesAll, year, initialMonth, onClose, writeAsset, writeAporte, notify, btn, btn2 }) => {
+    const [m, setM] = useState(initialMonth);
+    const [i, setI] = useState(0);
+    const [saved, setSaved] = useState(0);
+    const [txt, setTxt] = useState('');
+    const [apTxt, setApTxt] = useState('');
+    const [msg, setMsg] = useState('');
+    const model = useMemo(() => buildModel(activos, aportesAll, year), [activos, aportesAll, year]);
+    const ids = useMemo(() => model.list.filter((a) => heldIn(a, m, year)).map((a) => a.id), [model.list, m, year]);
+    const n = ids.length;
+    const fin = i >= n;
+    const curId = ids[i];
+    const a = !fin ? activos[curId] : null;
+    const dark = isDarkMode;
+    const tx = dark ? 'text-white' : 'text-gray-900';
+    const sub = dark ? 'text-slate-400' : 'text-gray-500';
+
+    // Al cambiar de activo o de mes, se precarga el valor ya cargado
+    useEffect(() => {
+      setMsg('');
+      if (a) { const r = monthVal(a, m, year); setTxt(r ? numToText(r.v) : ''); }
+    }, [i, m, curId]);
+    useEffect(() => {
+      if (fin) { const v = model.ap[m]; setApTxt(typeof v === 'number' ? numToText(v) : ''); }
+    }, [fin, m]);
+
+    const pv = a ? prevReading(a, m, year) : null;
+    const num = txt.trim() ? parseNum(txt) : null;
+    const diff = (num != null && num >= 0 && pv && pv.v > 0) ? num - pv.v : null;
+
+    const commit = (rawTxt) => {
+      const raw = rawTxt.trim();
+      if (!raw) return true;
+      const v = parseNum(raw);
+      if (!(v >= 0)) { setMsg('Escribí un número válido'); return false; }
+      if (!a) return true;
+      const r = monthVal(a, m, year);
+      if (!r || Math.abs(r.v - v) > 1e-9) {
+        const f = r ? r.f : defaultDate(m, year);
+        const lect = (a.lecturas || []).filter((x) => x.f !== f).concat([{ f, v }]).sort((x, y) => (x.f < y.f ? -1 : x.f > y.f ? 1 : 0));
+        writeAsset(curId, { ...a, lecturas: lect });
+        setSaved((s) => s + 1);
+      }
+      return true;
+    };
+    const next = (rawTxt) => { if (commit(rawTxt)) setI((x) => x + 1); };
+    const same = () => { if (pv) next(numToText(pv.v)); };
+    const save = () => {
+      const raw = apTxt.trim();
+      if (raw) {
+        const v = parseNum(raw);
+        if (!isFinite(v)) { setMsg('Escribí un número válido'); return; }
+        const key = pad(m + 1);
+        const ya = aportesAll[year] || {};
+        const mm = { ...(ya.m || {}) };
+        if (mm[key] !== v) { mm[key] = v; writeAporte(year, { m: mm, inicio: typeof ya.inicio === 'number' ? ya.inicio : null }); }
+      }
+      onClose();
+      notify(`Listo: cargaste ${saved} ${saved === 1 ? 'valor' : 'valores'} de ${MES[m]}`);
+    };
+
+    const tot = model.totals[m];
+    const pt = m === 0 ? model.ini : model.totals[m - 1];
+    const missing = ids.filter((id) => !monthVal(activos[id], m, year)).map((id) => activos[id].nombre);
+
+    return (
+      <Sheet isDarkMode={dark} title="Cargar el mes" subtitle={`${MESC[m]} ${year}`} onClose={onClose}>
+        {!n ? (
+          <div className="space-y-4">
+            <p className={`text-sm ${sub}`}>No hay activos para cargar en {MES[m]}.</p>
+            <button onClick={onClose} className={btn}>Cerrar</button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className={`${dark ? 'bg-slate-800' : 'bg-gray-100'} h-1.5 rounded-full overflow-hidden`}>
+              <div className="bg-blue-600 h-full transition-all" style={{ width: `${Math.min(i, n) / n * 100}%` }} />
+            </div>
+            {i === 0 && (
+              <div>
+                <label className={lblCls(dark)}>Mes</label>
+                <select value={m} onChange={(e) => { setM(Number(e.target.value)); setI(0); }} className={fieldCls(dark)}>
+                  {MESC.map((x, k) => <option key={k} value={k}>{x}</option>)}
+                </select>
+              </div>
+            )}
+            {!fin ? (
+              <>
+                <div className={`${dark ? 'bg-slate-800' : 'bg-gray-50'} rounded-2xl p-4 space-y-3`}>
+                  <div className={`flex justify-between text-xs ${sub}`}>
+                    <span className="font-bold uppercase tracking-wider">{(CATS.find((c) => c[0] === a.categoria) || ['', ''])[1]}</span>
+                    <span>{i + 1} de {n}</span>
+                  </div>
+                  <p className={`text-xl font-bold ${tx}`}>{a.nombre}</p>
+                  <p className={`text-xs ${sub}`}>{pv ? <>{MESC[pv.m]}{pv.y !== year ? ' ' + pv.y : ''}: <b>$ {fmt2.format(pv.v)}</b></> : 'Todavía no tiene valores de meses anteriores'}</p>
+                  <input autoFocus inputMode="decimal" autoComplete="off" placeholder="$ 0" value={txt}
+                    aria-label={`Valor de ${a.nombre} en ${MES[m]}`}
+                    onChange={(e) => { setTxt(e.target.value); setMsg(''); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); next(txt); } }}
+                    className={`${fieldCls(dark)} text-2xl font-bold text-center`} />
+                  <p className="text-xs min-h-[1rem] text-center" aria-live="polite">
+                    {diff != null && <><Delta v={diff} money /> · <span className={diff > 0 ? 'text-green-500' : diff < 0 ? 'text-red-500' : ''}>{pctText(diff / pv.v * 100)}</span> <span className={sub}>respecto de {MES[pv.m]}</span></>}
+                  </p>
+                  {msg && <p className="text-xs text-orange-500 font-medium text-center">{msg}</p>}
+                  {pv && <button onClick={same} className={`${btn2} w-full`}>Mismo valor que en {MES[pv.m]}</button>}
+                </div>
+                <div className="flex gap-2">
+                  <button disabled={i === 0} onClick={() => setI((x) => Math.max(0, x - 1))} className={`${btn2} ${i === 0 ? 'opacity-40' : ''}`}>‹ Anterior</button>
+                  <button onClick={() => setI((x) => x + 1)} className={btn2}>Saltar</button>
+                  <button onClick={() => next(txt)} className={`${btn} flex-1`}>{i === n - 1 ? 'Ver resumen ›' : 'Siguiente ›'}</button>
+                </div>
+                <p className={`text-xs ${sub}`}>Escribí el valor y apretá Enter para pasar al siguiente. «Saltar» deja ese activo como está.</p>
+              </>
+            ) : (
+              <div className="space-y-4">
+                <div className="text-center space-y-1">
+                  <p className={`text-3xl font-bold ${tx}`}>{tot == null ? '—' : money(tot)}</p>
+                  <p className={`text-xs ${sub}`}>Total de {MES[m]}</p>
+                  {tot != null && pt > 0 && <p className="text-xs"><Delta v={tot - pt} money /> · {pctText((tot - pt) / pt * 100)} <span className={sub}>respecto del mes anterior</span></p>}
+                  <p className={`text-xs ${sub}`}>Cargaste {saved} {saved === 1 ? 'valor' : 'valores'} en esta vuelta.</p>
+                </div>
+                {missing.length > 0 && <p className="text-xs text-orange-500 font-medium">Sin valor en {MES[m]}: <b>{missing.join(', ')}</b>. El total puede verse más bajo de lo real.</p>}
+                <div>
+                  <label className={lblCls(dark)}>Pusiste este mes (opcional)</label>
+                  <input inputMode="decimal" autoComplete="off" placeholder="$ 0" value={apTxt}
+                    onChange={(e) => { setApTxt(e.target.value); setMsg(''); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } }}
+                    className={fieldCls(dark)} />
+                  <p className={`text-xs mt-1 ${sub}`}>Si no pusiste nada, escribí 0. Si sacaste plata, escribila en negativo.</p>
+                  {msg && <p className="text-xs text-orange-500 font-medium mt-1">{msg}</p>}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setI((x) => Math.max(0, x - 1))} className={btn2}>‹ Anterior</button>
+                  <button onClick={save} className={`${btn} flex-1`}>Guardar y cerrar</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Sheet>
+    );
+  };
+
   const InversionesView = ({ isDarkMode, authUser, setActiveTab }) => {
     const [data, setData] = useState({ activos: {}, aportes: {}, ahorros: {}, dolar: null, meta: null });
     const [loaded, setLoaded] = useState(false);
@@ -50,6 +565,97 @@
     const sub = isDarkMode ? 'text-slate-400' : 'text-gray-500';
     const btn = 'bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl text-sm shadow-md transition-colors tap';
     const btn2 = `${isDarkMode ? 'bg-slate-800 text-slate-200 border-slate-700' : 'bg-gray-100 text-gray-800 border-gray-200'} border font-bold py-2.5 px-5 rounded-xl text-sm tap`;
+
+    // --- Mes a mes: año/mes mostrado, hojas, aviso ---
+    const nowD = new Date();
+    const [ym, setYm] = useState({ y: nowD.getFullYear(), m: nowD.getMonth() });
+    const [sheet, setSheet] = useState(null); // { kind: 'asset', id } | { kind: 'activos' } | { kind: 'wizard' }
+    const [toastS, setToastS] = useState(null);
+    const toastTimer = useRef(null);
+    const showToast = (t, undo) => {
+      clearTimeout(toastTimer.current);
+      setToastS({ t, undo });
+      toastTimer.current = setTimeout(() => setToastS(null), undo ? 6000 : 3200);
+    };
+    const notify = (t) => showToast(t);
+    const toastUndo = (t, fn) => showToast(t, fn);
+    useEffect(() => () => clearTimeout(toastTimer.current), []);
+
+    const baseRef = useMemo(() => (authUser && firebaseReady()) ? firebase.firestore().collection('users').doc(authUser.uid) : null, [authUser && authUser.uid]);
+    const safe = (p) => p.catch((e) => showToast(e && e.code === 'permission-denied'
+      ? 'No se pudo guardar: faltan las reglas de Firestore'
+      : 'No se pudo guardar: ' + ((e && e.message) || 'error')));
+    const writeAsset = (id, o) => {
+      if (!baseRef) return Promise.resolve();
+      const obj = cleanObj(o); delete obj.id;
+      return safe(baseRef.collection('activos').doc(id).set(obj));
+    };
+    const deleteAsset = (id) => (baseRef ? safe(baseRef.collection('activos').doc(id).delete()) : Promise.resolve());
+    const writeAporte = (y, o) => (baseRef ? safe(baseRef.collection('aportes').doc(String(y)).set(cleanObj(o))) : Promise.resolve());
+    const applyOps = (ops) => {
+      if (!baseRef) return;
+      const b = firebase.firestore().batch();
+      ops.forEach((o) => {
+        const ref = baseRef.collection(o.col).doc(o.id);
+        if (o.type === 'set') { const obj = cleanObj(o.obj); delete obj.id; b.set(ref, obj); } else b.delete(ref);
+      });
+      safe(b.commit());
+    };
+
+    const model = useMemo(() => buildModel(data.activos, data.aportes, ym.y), [data.activos, data.aportes, ym.y]);
+    const years = useMemo(() => {
+      const set = {}; const cy = new Date().getFullYear();
+      set[ym.y] = 1; set[cy] = 1; set[cy + 1] = 1;
+      Object.keys(data.activos).forEach((id) => {
+        const a = data.activos[id];
+        (a.lecturas || []).forEach((r) => { set[r.f.slice(0, 4)] = 1; });
+        (a.anios || []).forEach((y) => { set[y] = 1; });
+      });
+      Object.keys(data.aportes).forEach((y) => { set[y] = 1; });
+      return Object.keys(set).map(Number).filter((y) => y >= 2000 && y <= 2100).sort(byNum);
+    }, [data.activos, data.aportes, ym.y]);
+    const moveMonth = (d) => setYm(({ y, m }) => {
+      let nm = m + d, ny = y;
+      if (nm < 0) { nm = 11; ny = y - 1; } else if (nm > 11) { nm = 0; ny = y + 1; }
+      return { y: Math.max(2000, Math.min(2100, ny)), m: nm };
+    });
+    const setYear = (y) => setYm((s) => ({ ...s, y: Math.max(2000, Math.min(2100, y)) }));
+
+    const commitValue = (id, m, raw) => {
+      const a = data.activos[id]; if (!a) return;
+      const y = ym.y, r = monthVal(a, m, y);
+      if (!raw) {
+        if (r) {
+          const p = `${y}-${pad(m + 1)}`, old = cleanObj(a);
+          writeAsset(id, { ...a, lecturas: (a.lecturas || []).filter((x) => x.f.indexOf(p) !== 0) });
+          toastUndo(`Borraste el valor de ${a.nombre} en ${MES[m]}`, () => writeAsset(id, old));
+        }
+        return;
+      }
+      const n = parseNum(raw);
+      if (!(n >= 0)) { showToast('Escribí un número válido'); return; }
+      if (!r || Math.abs(r.v - n) > 1e-9) {
+        const f = r ? r.f : defaultDate(m, y);
+        const lect = (a.lecturas || []).filter((x) => x.f !== f).concat([{ f, v: n }]).sort((p, q) => (p.f < q.f ? -1 : p.f > q.f ? 1 : 0));
+        writeAsset(id, { ...a, lecturas: lect });
+      }
+    };
+    const commitAporte = (m, raw) => {
+      const y = ym.y, ya = data.aportes[y] || {}, mm = { ...(ya.m || {}) }, key = pad(m + 1);
+      const inicio = typeof ya.inicio === 'number' ? ya.inicio : null;
+      if (!raw.trim()) { if (key in mm) { delete mm[key]; writeAporte(y, { m: mm, inicio }); } return; }
+      const v = parseNum(raw);
+      if (!isFinite(v)) { showToast('Escribí un número válido'); return; }
+      if (mm[key] !== v) { mm[key] = v; writeAporte(y, { m: mm, inicio }); }
+    };
+    const commitInicio = (raw) => {
+      const y = ym.y, ya = data.aportes[y] || {};
+      let v = null;
+      if (raw.trim()) { v = parseNum(raw); if (!isFinite(v)) { showToast('Escribí un número válido'); return; } }
+      if (v !== (typeof ya.inicio === 'number' ? ya.inicio : null)) writeAporte(y, { m: ya.m || {}, inicio: v });
+    };
+    const btnS = btn.replace('py-2.5 px-5', 'py-2 px-3');
+    const btn2S = btn2.replace('py-2.5 px-5', 'py-2 px-3');
 
     // --- Suscripción en tiempo real a las subcolecciones del usuario ---
     useEffect(() => {
@@ -230,26 +836,117 @@
           </p>
         </div>
 
-        {/* Lista de solo lectura (la carga y edición llegan en la parte 2) */}
-        {resumen.grupos.map((g) => (
-          <div key={g.id} className={card}>
-            <div className="flex justify-between items-center mb-3">
-              <p className={`text-xs font-bold uppercase tracking-wider ${sub}`}>{g.nombre}</p>
-              <p className={`text-sm font-bold ${txt}`}>{money(g.subtotal)}</p>
-            </div>
-            <div className="space-y-2">
-              {g.items.map(({ a, r }) => (
-                <div key={a.id || a.nombre} className="flex justify-between items-center gap-2">
-                  <div className="min-w-0">
-                    <p className={`text-sm font-semibold truncate ${txt}`}>{a.nombre}</p>
-                    {a.vendido && <p className="text-[10px] font-bold text-orange-500">Vendido · {soldLabel(a)}</p>}
-                  </div>
-                  <p className={`text-sm font-medium shrink-0 ${a.vendido ? sub : txt}`}>{r ? money(r.v) : '—'}</p>
-                </div>
-              ))}
+        {/* Mes a mes */}
+        <div className={`${card} space-y-4`}>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className={`font-bold text-base ${txt}`}>Mes a mes</h2>
+            <div className="flex gap-2">
+              <button onClick={() => setSheet({ kind: 'activos' })} className={btn2S}>Activos</button>
+              <button onClick={() => setSheet({ kind: 'wizard' })} className={btnS}>Cargar el mes</button>
             </div>
           </div>
-        ))}
+
+          <div className="flex items-center justify-between gap-2">
+            <button onClick={() => moveMonth(-1)} aria-label="Mes anterior" className={`${btn2S} text-lg leading-none`}>‹</button>
+            <div className="text-center">
+              <p className={`font-bold ${txt}`}>{MESC[ym.m]}</p>
+              <div className="flex items-center justify-center gap-1">
+                <button onClick={() => setYear(ym.y - 1)} aria-label="Año anterior" className={`text-xs px-1 ${sub}`}>‹</button>
+                <select value={ym.y} onChange={(e) => setYear(Number(e.target.value))} aria-label="Año" className={`text-xs font-bold bg-transparent ${sub} outline-none`}>
+                  {years.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <button onClick={() => setYear(ym.y + 1)} aria-label="Año siguiente" className={`text-xs px-1 ${sub}`}>›</button>
+              </div>
+            </div>
+            <button onClick={() => moveMonth(1)} aria-label="Mes siguiente" className={`${btn2S} text-lg leading-none`}>›</button>
+          </div>
+
+          {!loaded ? (
+            <p className={`text-sm ${sub}`}>Cargando…</p>
+          ) : !model.list.length ? (
+            <div className="text-center space-y-2 py-2">
+              <p className={`font-bold ${txt}`}>No hay activos en {ym.y}</p>
+              <p className={`text-xs ${sub}`}>Elegí cuáles tenías este año con el botón «Activos».</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {(() => {
+                const m = ym.m, v = model.totals[m], p = m === 0 ? model.ini : model.totals[m - 1];
+                return (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <span className={`text-sm ${sub}`}>Total del mes</span>
+                      <b className={`text-lg ${txt}`}>
+                        {v == null ? <span className="opacity-50">—</span> : <>{p != null && v > p ? <span className="text-green-500">▲ </span> : p != null && v < p ? <span className="text-red-500">▼ </span> : null}{money(v)}</>}
+                      </b>
+                    </div>
+                    <div className="flex justify-between items-center gap-3">
+                      <div className="min-w-0">
+                        <span className={`text-sm ${sub}`}>Pusiste este mes</span>
+                        <p className={`text-[10px] ${sub}`}>Lo que sumaste de tu bolsillo (0 si nada)</p>
+                      </div>
+                      <input key={`ap-${ym.y}-${m}-${model.ap[m]}`} inputMode="decimal" autoComplete="off" placeholder="$ 0"
+                        aria-label={`Lo que pusiste en ${MES[m]}`}
+                        defaultValue={model.ap[m] == null ? '' : numToText(model.ap[m])}
+                        onBlur={(e) => commitAporte(m, e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                        className={`${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} w-32 text-right border rounded-lg px-2 py-1 text-sm font-semibold outline-none focus:border-blue-500`} />
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className={`text-sm ${sub}`}>Rindieron tus inversiones</span>
+                        <p className={`text-[10px] ${sub}`}>Total − mes anterior − lo que pusiste</p>
+                      </div>
+                      <b className="text-sm"><Delta v={model.gains[m]} money /></b>
+                    </div>
+                  </>
+                );
+              })()}
+
+              {CATS.map((c) => {
+                const rows = model.list.filter((a) => a.categoria === c[0]);
+                if (!rows.length) return null;
+                const subt = model.cats[c[0]][ym.m];
+                return (
+                  <div key={c[0]} className={`border-t ${isDarkMode ? 'border-slate-800' : 'border-gray-100'} pt-3`}>
+                    <div className="flex justify-between items-center mb-1">
+                      <p className={`text-xs font-bold uppercase tracking-wider ${sub}`}>{c[1]}</p>
+                      <p className={`text-sm font-bold ${txt}`}>{subt == null ? '' : money(subt)}</p>
+                    </div>
+                    {rows.map((a) => {
+                      const r = model.vals[a.id][ym.m];
+                      return (
+                        <div key={a.id} className="flex justify-between items-center gap-2 py-1">
+                          <button onClick={() => setSheet({ kind: 'asset', id: a.id })} title="Cambiar nombre o tipo" className="min-w-0 text-left">
+                            <span className={`text-sm font-semibold truncate block ${txt}`}>{a.nombre}</span>
+                            {soldIdx(a) != null && <span className="text-[10px] font-bold text-orange-500">Vendido · {MES[soldIdx(a) % 12]} {Math.floor(soldIdx(a) / 12)}</span>}
+                          </button>
+                          <ValueCell key={`${a.id}-${ym.y}-${ym.m}-${r ? r.v : 'x'}`} isDarkMode={isDarkMode}
+                            label={`${a.nombre}, ${MES[ym.m]}`} value={r ? r.v : null}
+                            onCommit={(raw) => commitValue(a.id, ym.m, raw)} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+
+              {model.iniAuto == null && (
+                <div className={`border-t ${isDarkMode ? 'border-slate-800' : 'border-gray-100'} pt-3 flex justify-between items-center gap-3`}>
+                  <div className="min-w-0">
+                    <span className={`text-sm ${sub}`}>Valor al cierre del año anterior</span>
+                    <p className={`text-[10px] ${sub}`}>Opcional: sirve para calcular lo que rindió enero</p>
+                  </div>
+                  <input key={`ini-${ym.y}-${model.iniSet}`} inputMode="decimal" autoComplete="off" placeholder="$ 0"
+                    defaultValue={model.iniSet == null ? '' : numToText(model.iniSet)}
+                    onBlur={(e) => commitInicio(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                    className={`${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} w-32 text-right border rounded-lg px-2 py-1 text-sm font-semibold outline-none focus:border-blue-500`} />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {vacio && (
           <div className={`${card} text-center space-y-1`}>
@@ -282,6 +979,28 @@
           )}
           {importMsg && <p className={`text-xs font-medium ${importMsg.startsWith('Listo') ? 'text-green-500' : 'text-orange-500'}`}>{importMsg}</p>}
         </div>
+
+        {sheet && sheet.kind === 'asset' && data.activos[sheet.id] && (
+          <AssetSheet key={sheet.id} isDarkMode={isDarkMode} asset={{ ...data.activos[sheet.id], id: sheet.id }} year={ym.y} years={years}
+            onClose={() => setSheet(null)} writeAsset={writeAsset} deleteAsset={deleteAsset} toastUndo={toastUndo} notify={notify} btn={btn} btn2={btn2} />
+        )}
+        {sheet && sheet.kind === 'activos' && (
+          <ActivosSheet isDarkMode={isDarkMode} activos={data.activos} year={ym.y} onClose={() => setSheet(null)}
+            applyOps={applyOps} notify={notify} btn={btn} btn2={btn2} />
+        )}
+        {sheet && sheet.kind === 'wizard' && (
+          <MonthWizard isDarkMode={isDarkMode} activos={data.activos} aportesAll={data.aportes} year={ym.y} initialMonth={ym.m}
+            onClose={() => setSheet(null)} writeAsset={writeAsset} writeAporte={writeAporte} notify={notify} btn={btn} btn2={btn2} />
+        )}
+        {toastS && ReactDOM.createPortal(
+          <div className="fixed left-0 right-0 bottom-24 z-[70] flex justify-center px-4 pointer-events-none">
+            <div className="pointer-events-auto bg-gray-900 text-white text-sm font-medium rounded-2xl px-4 py-3 shadow-xl flex items-center gap-3 max-w-sm">
+              <span>{toastS.t}</span>
+              {toastS.undo && <button onClick={() => { toastS.undo(); setToastS(null); }} className="text-blue-400 font-bold shrink-0">Deshacer</button>}
+            </div>
+          </div>,
+          document.body
+        )}
       </div>
     );
   };

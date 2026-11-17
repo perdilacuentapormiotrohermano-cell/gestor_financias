@@ -3896,7 +3896,8 @@ function ExpenseTrackerApp() {
         { id: 'cuotas', label: 'Seguimiento Cuotas', icon: <TargetIcon />, color: 'text-purple-500 bg-purple-500/10' },
         { id: 'presupuestos', label: 'Presupuestos', icon: <ShieldIcon />, color: 'text-teal-500 bg-teal-500/10' },
         { id: 'categorias', label: 'Categorías', icon: <SettingsIcon active={true} />, color: 'text-blue-500 bg-blue-500/10' },
-        { id: 'viajes', label: 'Modo Viaje', icon: <PlaneIcon />, color: 'text-orange-500 bg-orange-500/10' }
+        { id: 'viajes', label: 'Modo Viaje', icon: <PlaneIcon />, color: 'text-orange-500 bg-orange-500/10' },
+        { id: 'inversiones', label: 'Inversiones', icon: <TrendingUpIcon />, color: 'text-indigo-500 bg-indigo-500/10' }
       ];
       return (
         <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-left-4 duration-300`}>
@@ -3928,7 +3929,7 @@ function ExpenseTrackerApp() {
             <ArrowLeftIcon />
           </button>
           <h1 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-            {{ historial: 'Historial General', habituales: 'Pagos Habituales', cuotas: 'Seguimiento Cuotas', presupuestos: 'Presupuestos', categorias: 'Categorías', viajes: 'Modo Viaje' }[subTab]}
+            {{ historial: 'Historial General', habituales: 'Pagos Habituales', cuotas: 'Seguimiento Cuotas', presupuestos: 'Presupuestos', categorias: 'Categorías', viajes: 'Modo Viaje', inversiones: 'Inversiones' }[subTab]}
           </h1>
         </div>
 
@@ -4502,6 +4503,10 @@ function ExpenseTrackerApp() {
               onToggleActiveTrip={(tripId) => setSettings(s => ({ ...s, activeTripId: s.activeTripId === tripId ? null : tripId }))}
             />
           </div>
+        )}
+
+        {subTab === 'inversiones' && window.InversionesView && (
+          <window.InversionesView isDarkMode={isDarkMode} authUser={authUser} setActiveTab={setActiveTab} />
         )}
       </div>
     );

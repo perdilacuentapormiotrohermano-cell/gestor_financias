@@ -6,7 +6,7 @@
 // para qué categoría se juntó esa plata; sin eso cuenta solo en el fondo general.
 // ============================================================
 (function () {
-  const { useState } = React;
+  const { useState, useEffect } = React;
   const pad = (n) => String(n).padStart(2, '0');
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
@@ -234,6 +234,193 @@
     );
   };
 
-  window.TripSavings = { calc, phaseOf };
+  // ============================================================
+  // Importar los "Ahorros" de la app de inversiones como viajes
+  // Lee users/{uid}/ahorros (ya importados en Registro → Inversiones) y crea un viaje
+  // por cada uno. Los ahorros originales NO se borran; cada viaje queda marcado con
+  // `importedFromAhorro` para no duplicarlo si se repite la importación.
+  // ============================================================
+  const slugId = (n) => {
+    const t = String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return t || 'cat';
+  };
+  const fsOK = () => typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length;
+
+  // Convierte un ahorro en el documento de un viaje (sin los campos de dueño/miembros)
+  function convertAhorro(id, a, user) {
+    const used = {};
+    const cats = (a.cats || []).map((c, i) => {
+      let cid = slugId(c.nombre), k = 2;
+      while (used[cid]) cid = slugId(c.nombre) + '-' + (k++);
+      used[cid] = 1;
+      return { src: c, id: cid, name: String(c.nombre || 'Categoría ' + (i + 1)).slice(0, 40), budget: num(c.meta) > 0 ? num(c.meta) : 0 };
+    });
+    const todayISO = localISO(new Date());
+    const txs = []; let retiros = 0;
+    cats.forEach((c) => {
+      (c.src.mov || []).forEach((m, j) => {
+        const v = Number(m.v);
+        if (!isFinite(v) || v === 0) return;
+        const gasto = m.t === 'gasto';
+        const f = DATE_RE.test(String(m.f || '')) ? m.f : todayISO;
+        const note = String(m.n || '').trim();
+        const tx = {
+          id: `imp_${id}_${c.id}_${m.id || j}`,
+          type: gasto ? 'gasto' : 'aporte',
+          amount: v,
+          description: gasto ? (note || 'Gasto') : (v < 0 ? (note ? 'Retiro: ' + note : 'Retiro') : (note || 'Aporte al fondo')),
+          category: c.id,
+          date: new Date(f + 'T12:00:00').toISOString(),
+          createdBy: user.uid,
+          createdByEmail: user.email || ''
+        };
+        if (!gasto) { tx.savedFor = c.id; if (v < 0) retiros++; }
+        txs.push(tx);
+      });
+    });
+    txs.sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0));
+    const budget = cats.reduce((sum2, c) => sum2 + c.budget, 0);
+    const ah = txs.filter((t) => t.type === 'aporte').reduce((sum2, t) => sum2 + t.amount, 0);
+    const gas = txs.filter((t) => t.type === 'gasto').reduce((sum2, t) => sum2 + t.amount, 0);
+    return {
+      doc: {
+        name: String(a.nombre || 'Viaje').trim().slice(0, 60) || 'Viaje',
+        startDate: DATE_RE.test(String(a.fecha || '')) ? a.fecha : null,
+        endDate: null,
+        budget,
+        categories: cats.map((c) => ({ id: c.id, name: c.name, budget: c.budget })),
+        transactions: txs,
+        importedFromAhorro: id,
+        currency: a.moneda === 'USD' ? 'USD' : 'ARS',
+        archived: !!a.archivado
+      },
+      stats: { cats: cats.length, ah, gas, retiros, movs: txs.length, usd: a.moneda === 'USD', archivado: !!a.archivado }
+    };
+  }
+
+  const TripAhorrosImport = ({ authUser, trips, isDarkMode, formatMoney, cardCls, labelCls }) => {
+    const [ahorros, setAhorros] = useState(null);
+    const [open, setOpen] = useState(false);
+    const [sel, setSel] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const [msg, setMsg] = useState('');
+    const [done, setDone] = useState({});
+    const [hidden, setHidden] = useState(false); // solo se oculta mientras la app está abierta
+    const uid = authUser && authUser.uid;
+
+    useEffect(() => {
+      if (!uid || !fsOK()) return undefined;
+      const unsub = firebase.firestore().collection('users').doc(uid).collection('ahorros').onSnapshot((snap) => {
+        const o = {}; snap.forEach((d) => { o[d.id] = d.data(); }); setAhorros(o);
+      }, () => setAhorros({}));
+      return () => { try { unsub(); } catch (e) { /* noop */ } };
+    }, [uid]);
+
+    if (!uid || !ahorros || hidden) return null;
+    const imported = {};
+    (trips || []).forEach((t) => { if (t.importedFromAhorro) imported[t.importedFromAhorro] = 1; });
+    const pending = Object.keys(ahorros).filter((id) => !imported[id] && !done[id])
+      .sort((x, y) => (num(ahorros[x].orden) - num(ahorros[y].orden)) || String(ahorros[x].nombre).localeCompare(ahorros[y].nombre))
+      .map((id) => ({ id, a: ahorros[id], conv: convertAhorro(id, ahorros[id], authUser) }));
+    if (!pending.length) return null;
+
+    const dark = isDarkMode;
+    const tx = dark ? 'text-white' : 'text-gray-900';
+    const btn = 'bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 px-5 rounded-xl text-sm shadow-md transition-colors';
+    const btn2 = `${dark ? 'bg-slate-800 text-slate-200 border-slate-700' : 'bg-gray-100 text-gray-800 border-gray-200'} border font-bold py-2.5 px-4 rounded-xl text-sm`;
+    // Por defecto se tildan los ahorros en pesos y no archivados
+    const isOn = (p) => (sel && p.id in sel ? sel[p.id] : !(p.conv.stats.usd || p.conv.stats.archivado));
+    const chosen = pending.filter(isOn);
+
+    const hide = () => setHidden(true);
+
+    const doImport = async () => {
+      if (!chosen.length || busy) return;
+      setBusy(true); setMsg('');
+      const db = firebase.firestore(), codes = [], ok = {};
+      try {
+        for (const p of chosen) {
+          const code = `${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-2)}`.toUpperCase();
+          await db.collection('trips').doc(code).set({
+            ...p.conv.doc,
+            ownerUid: authUser.uid,
+            members: [authUser.uid],
+            memberEmails: { [authUser.uid]: authUser.email || '' },
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          });
+          codes.push(code); ok[p.id] = 1;
+        }
+        await db.collection('users').doc(authUser.uid).set({ tripIds: firebase.firestore.FieldValue.arrayUnion(...codes) }, { merge: true });
+        setDone((d) => ({ ...d, ...ok }));
+        setOpen(false); setSel(null);
+      } catch (e) {
+        setDone((d) => ({ ...d, ...ok }));
+        if (codes.length) { try { await db.collection('users').doc(authUser.uid).set({ tripIds: firebase.firestore.FieldValue.arrayUnion(...codes) }, { merge: true }); } catch (e2) { /* noop */ } }
+        setMsg(`No se pudo terminar${codes.length ? ` (se crearon ${codes.length})` : ''}: ${(e && e.message) || 'error'}`);
+      }
+      setBusy(false);
+    };
+
+    const sheet = open && ReactDOM.createPortal(
+      <div className={dark ? 'app-dark' : ''}>
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-end sm:items-center justify-center" onClick={() => !busy && setOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} className={`w-full sm:max-w-md max-h-[90vh] overflow-y-auto ${dark ? 'bg-slate-900 text-slate-100' : 'bg-white text-gray-900'} rounded-t-3xl sm:rounded-3xl p-5 pb-8 shadow-xl`}>
+            <div className="flex items-start justify-between gap-3 mb-1">
+              <h3 className="font-bold text-lg">Traer ahorros como viajes</h3>
+              <button onClick={() => !busy && setOpen(false)} aria-label="Cerrar" className={`${dark ? 'bg-slate-800 text-slate-300' : 'bg-gray-100 text-gray-600'} w-8 h-8 rounded-full text-xl leading-none shrink-0`}>×</button>
+            </div>
+            <p className={`text-xs mb-4 ${labelCls}`}>Cada ahorro se copia como un viaje nuevo, con sus categorías, aportes y gastos. Tus ahorros originales no se borran.</p>
+            <div className="space-y-2">
+              {pending.map((p) => {
+                const st = p.conv.stats, d = p.conv.doc;
+                return (
+                  <label key={p.id} className={`${dark ? 'bg-slate-800' : 'bg-gray-50'} flex gap-3 items-start rounded-2xl p-3`}>
+                    <input type="checkbox" className="w-5 h-5 mt-0.5 accent-orange-500" checked={isOn(p)} disabled={busy}
+                      onChange={(e) => setSel((cur) => ({ ...(cur || {}), [p.id]: e.target.checked }))} />
+                    <div className="min-w-0 text-xs space-y-0.5">
+                      <p className={`text-sm font-bold ${tx}`}>{d.name}</p>
+                      <p className={labelCls}>
+                        {st.cats} {st.cats === 1 ? 'categoría' : 'categorías'} · presupuesto {formatMoney(d.budget)}{d.startDate ? ` · salida ${fdate(d.startDate)}` : ' · sin fecha'}
+                      </p>
+                      <p className={labelCls}>Ahorrado <b>{formatMoney(st.ah)}</b> · Gastado <b>{formatMoney(st.gas)}</b> · {st.movs} {st.movs === 1 ? 'movimiento' : 'movimientos'}</p>
+                      {st.usd && <p className="text-orange-500 font-semibold">En dólares: el gestor lo va a mostrar con su moneda hasta que agreguemos moneda por viaje.</p>}
+                      {st.archivado && <p className={`${labelCls} italic`}>Estaba archivado</p>}
+                      {st.retiros > 0 && <p className={labelCls}>{st.retiros} {st.retiros === 1 ? 'retiro' : 'retiros'} (se ven como aporte en negativo)</p>}
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            {msg && <p className="text-xs text-red-500 font-medium mt-3">{msg}</p>}
+            <div className="flex gap-2 mt-4">
+              <button disabled={busy} onClick={() => setOpen(false)} className={btn2}>Cancelar</button>
+              <button disabled={busy || !chosen.length} onClick={doImport} className={`${btn} flex-1 ${(busy || !chosen.length) ? 'opacity-60' : ''}`}>
+                {busy ? 'Importando…' : `Importar ${chosen.length} ${chosen.length === 1 ? 'viaje' : 'viajes'}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+
+    return (
+      <>
+        <div className={`${cardCls} rounded-2xl p-4 shadow-sm border mb-5 border-orange-500/30`}>
+          <p className={`text-sm font-bold ${tx}`}>Tenés {pending.length} {pending.length === 1 ? 'ahorro' : 'ahorros'} de tu app de inversiones</p>
+          <p className={`text-xs mt-1 ${labelCls}`}>Podés convertirlos en viajes, con su meta, aportes y gastos, para manejar todo desde acá.</p>
+          <div className="flex gap-2 mt-3">
+            <button onClick={() => { setMsg(''); setOpen(true); }} className={btn}>Revisar e importar</button>
+            <button onClick={hide} className={btn2}>Ahora no</button>
+          </div>
+        </div>
+        {sheet}
+      </>
+    );
+  };
+
+  window.TripAhorrosImport = TripAhorrosImport;
+  window.TripSavings = { calc, phaseOf, convertAhorro };
   window.TripSavingsCard = TripSavingsCard;
 })();

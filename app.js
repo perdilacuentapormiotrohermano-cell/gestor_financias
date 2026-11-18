@@ -1429,8 +1429,8 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className={`font-bold text-sm ${t.type === 'aporte' ? 'text-green-500' : 'text-red-500'}`}>
-                        {t.type === 'aporte' ? '+' : '-'}{formatMoney(t.amount)}
+                      <span className={`font-bold text-sm ${t.type === 'aporte' && parseFloat(t.amount) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        {t.type === 'aporte' && parseFloat(t.amount) >= 0 ? '+' : '-'}{formatMoney(Math.abs(parseFloat(t.amount) || 0))}
                       </span>
                       {(t.createdBy === authUser.uid || isOwner) && (
                         <button onClick={() => onDeleteTripTransaction(trip.id, t)} className="text-gray-400 hover:text-red-500 transition-colors">
@@ -1635,6 +1635,10 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
         </button>
       </div>
       <p className={`text-xs mb-5 ${labelCls}`}>Fondo, presupuesto e historial exclusivos por viaje. Invitá a otras cuentas para cargar gastos juntos.</p>
+
+      {tripsCheckDone && window.TripAhorrosImport && (
+        <window.TripAhorrosImport authUser={authUser} trips={trips} isDarkMode={isDarkMode} formatMoney={formatMoney} cardCls={cardCls} labelCls={labelCls} />
+      )}
 
       <div className="space-y-3 mb-6">
         {!tripsCheckDone ? (

@@ -208,6 +208,244 @@
   const lblCls = (dark) => `block text-xs font-bold uppercase tracking-wider mb-1 ${dark ? 'text-slate-400' : 'text-gray-500'}`;
 
 
+  // ---------- Resumen, gráficos y comparación entre años ----------
+  const compact = (v) => {
+    if (v >= 1e6) return fmt1.format(v / 1e6).replace(',0', '') + ' M';
+    if (v >= 1e3) return fmt0.format(Math.round(v / 1e3)) + ' mil';
+    return fmt0.format(v);
+  };
+  const shortMoney = (v) => {
+    const a = Math.abs(v);
+    if (a >= 1e6) return '$ ' + fmt1.format(v / 1e6) + ' M';
+    if (a >= 1e3) return '$ ' + fmt0.format(v / 1e3) + ' mil';
+    return '$ ' + fmt0.format(v);
+  };
+  const niceMax = (v) => {
+    if (v <= 0) return 1;
+    const e = Math.pow(10, Math.floor(Math.log10(v))), n = v / e;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * e;
+  };
+  const niceTicks = (max) => {
+    const raw = max / 4, pw = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / pw;
+    const st = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pw, out = [];
+    for (let v = 0; v <= max + st * 0.999; v += st) { out.push(v); if (out.length > 8) break; }
+    return out;
+  };
+  const palette = (dark) => dark
+    ? { c: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#2f9e44', '#9085e9', '#e66767'], muted: '#64748b', line: '#334155', label: '#94a3b8', ink: '#f8fafc', surface: '#0f172a' }
+    : { c: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'], muted: '#9ca3af', line: '#e5e7eb', label: '#6b7280', ink: '#111827', surface: '#ffffff' };
+
+  // Total de cada mes de un año, sumando todos los activos
+  const yearTotals = (activos, y) => {
+    const ids = Object.keys(activos), totals = [];
+    for (let m = 0; m < 12; m++) {
+      let t = null;
+      ids.forEach((id) => { const r = monthVal(activos[id], m, y); if (r) t = (t || 0) + r.v; });
+      totals.push(t);
+    }
+    return totals;
+  };
+  const yearStats = (activos, aportesAll, y) => {
+    const totals = yearTotals(activos, y);
+    const d = aportesAll[y] || {}, ap = d.m || {};
+    const ini = typeof d.inicio === 'number' ? d.inicio : yearClose(activos, y - 1);
+    let latest = -1;
+    totals.forEach((t, i) => { if (t != null) latest = i; });
+    if (latest < 0) return null;
+    let gain = 0, base = null, from = -1, apSum = 0, apAny = false;
+    Object.keys(ap).forEach((k) => { if (typeof ap[k] === 'number') { apSum += ap[k]; apAny = true; } });
+    for (let m = 0; m <= latest; m++) {
+      const t = totals[m]; if (t == null) continue;
+      const p = m === 0 ? ini : totals[m - 1]; if (p == null) continue;
+      const a = typeof ap[pad(m + 1)] === 'number' ? ap[pad(m + 1)] : 0;
+      if (from < 0) { from = m; base = p; }
+      gain += t - p - a; base += a;
+    }
+    return { y, cierre: totals[latest], latest, aportado: apSum, hasAp: apAny, ganancia: from < 0 ? null : gain, from, pct: (from < 0 || !(base > 0)) ? null : gain / base * 100 };
+  };
+  // Serie de todos los años: valor y "lo que fuiste poniendo" acumulado
+  const seriesAll = (activos, aportesAll, years) => {
+    const pts = []; let cum = 0, started = false;
+    years.forEach((y) => {
+      const totals = yearTotals(activos, y), ap = (aportesAll[y] || {}).m || {};
+      for (let m = 0; m < 12; m++) {
+        const t = totals[m], a = typeof ap[pad(m + 1)] === 'number' ? ap[pad(m + 1)] : 0;
+        if (t == null) { if (started) cum += a; continue; }
+        if (!started) { started = true; cum = t; } else cum += a;
+        pts.push({ y, m, t, c: cum });
+      }
+    });
+    return pts;
+  };
+
+  const ChartTip = ({ left, align, children, dark }) => (
+    <div className={`${dark ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-900'} absolute top-0 z-10 border rounded-xl shadow-lg px-3 py-2 text-xs pointer-events-none whitespace-nowrap space-y-0.5`}
+      style={{ left: `${left}%`, transform: `translateX(${align})` }}>{children}</div>
+  );
+  const tipAlign = (i, n) => (i < n * 0.2 ? '-10%' : i > n * 0.8 ? '-90%' : '-50%');
+  const TipRow = ({ k, children }) => <div className="flex justify-between gap-4"><span className="opacity-70">{k}</span><span className="font-semibold">{children}</span></div>;
+
+  // Gráfico del año: valor total por mes y aportes acumulados
+  const YearChart = ({ model, pal, isDarkMode }) => {
+    const [hi, setHi] = useState(null);
+    const ref = useRef(null);
+    if (model.latest < 0) return <p className="text-xs opacity-60">El gráfico aparece cuando cargues el primer valor.</p>;
+    const W = 360, H = 250, l = 50, r = 14, t = 18, b = 28;
+    const acc = []; let run = 0, any = false;
+    model.ap.forEach((v, m) => { if (v != null) { run += v; any = true; } acc.push(m <= model.latest ? run : null); });
+    const maxV = Math.max(...model.totals.filter((x) => x != null), any ? run : 0);
+    const ymax = niceMax(maxV * 1.05), step = (W - l - r) / 11;
+    const X = (i) => l + i * step, Y = (v) => t + (H - t - b) * (1 - v / ymax);
+    const path = (arr) => { let d = '', pen = false; arr.forEach((v, i) => { if (v == null) { pen = false; return; } d += (pen ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1) + ' '; pen = true; }); return d; };
+    const move = (e) => {
+      const rc = ref.current.getBoundingClientRect();
+      if (!rc.width) return;
+      const x = (e.clientX - rc.left) / rc.width * W;
+      const i = Math.max(0, Math.min(11, Math.round((x - l) / step)));
+      setHi(model.totals[i] == null ? null : i);
+    };
+    const AB = MES.map((m) => m.slice(0, 3));
+    return (
+      <div>
+        <div className="flex gap-4 text-xs mb-2" style={{ color: pal.label }}>
+          <span className="flex items-center gap-1.5"><i className="inline-block w-3 h-0.5 rounded" style={{ background: pal.c[0] }} />Valor total del mes</span>
+          {any && <span className="flex items-center gap-1.5"><i className="inline-block w-3 h-0.5 rounded" style={{ background: pal.c[1] }} />Aportes acumulados</span>}
+        </div>
+        <div className="relative" ref={ref} style={{ touchAction: 'pan-y' }} onPointerMove={move} onPointerDown={move} onPointerLeave={() => setHi(null)}>
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block" role="img" aria-label="Valor total por mes">
+            {[0, 1, 2, 3, 4].map((k) => { const v = ymax * k / 4, y = Y(v); return (
+              <g key={k}><line x1={l} x2={W - r} y1={y} y2={y} stroke={pal.line} strokeWidth="1" /><text x={l - 8} y={y + 4} textAnchor="end" fontSize="11" fill={pal.label}>{compact(v)}</text></g>
+            ); })}
+            {AB.map((a, i) => <text key={i} x={X(i)} y={H - 8} textAnchor="middle" fontSize="11" fill={i === model.latest ? pal.ink : pal.label}>{a}</text>)}
+            {any && <path d={path(acc)} fill="none" stroke={pal.c[1]} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
+            <path d={path(model.totals)} fill="none" stroke={pal.c[0]} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+            {model.totals.map((v, i) => v != null && <circle key={i} cx={X(i)} cy={Y(v)} r="3.5" fill={pal.c[0]} stroke={pal.surface} strokeWidth="2" />)}
+            {any && acc[model.latest] != null && <circle cx={X(model.latest)} cy={Y(acc[model.latest])} r="3.5" fill={pal.c[1]} stroke={pal.surface} strokeWidth="2" />}
+            <text x={model.latest > 9 ? X(model.latest) - 8 : X(model.latest)} y={Y(model.totals[model.latest]) - 11} textAnchor={model.latest > 9 ? 'end' : 'middle'} fontSize="12" fontWeight="600" fill={pal.ink}>{compact(model.totals[model.latest])}</text>
+            {hi != null && <line x1={X(hi)} x2={X(hi)} y1={t} y2={H - b} stroke={pal.muted} strokeWidth="1" />}
+          </svg>
+          {hi != null && (
+            <ChartTip dark={isDarkMode} left={X(hi) / W * 100} align={tipAlign(hi, 12)}>
+              <b>{MESC[hi]}</b>
+              <TipRow k="Total">{money(model.totals[hi])}</TipRow>
+              {acc[hi] != null && acc[hi] > 0 && <TipRow k="Aportado">{money(acc[hi])}</TipRow>}
+              {model.gains[hi] != null && <TipRow k="Rindieron"><Delta v={model.gains[hi]} money /></TipRow>}
+            </ChartTip>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Torta: dónde está la plata en el último mes con datos
+  const CompDonut = ({ model, pal, isDarkMode }) => {
+    const [hi, setHi] = useState(null);
+    if (model.latest < 0) return null;
+    const L = model.latest, tot = model.totals[L];
+    let items = model.list.map((a) => { const r = model.vals[a.id][L]; return r ? { n: a.nombre, v: r.v } : null; }).filter(Boolean).sort((x, y) => y.v - x.v);
+    if (!items.length || !(tot > 0)) return null;
+    const cs = CATS.map((c) => { const v = model.cats[c[0]][L]; return v ? `${c[1]} ${fmt1.format(v / tot * 100)} %` : null; }).filter(Boolean).join(' · ');
+    if (items.length > 8) {
+      const rest = items.slice(7); let sum = 0; rest.forEach((x) => { sum += x.v; });
+      items = items.slice(0, 7); items.push({ n: `Otros (${rest.length})`, v: sum, other: true });
+    }
+    const R = 100, r = 62, cx = 110, cy = 110; let ang = -Math.PI / 2;
+    const paths = items.map((x, i) => {
+      const f = x.v / tot, col = x.other ? pal.muted : pal.c[i % pal.c.length]; let d;
+      if (f >= 0.9999) {
+        d = `M${cx} ${cy - R}A${R} ${R} 0 1 1 ${cx} ${cy + R}A${R} ${R} 0 1 1 ${cx} ${cy - R}ZM${cx} ${cy - r}A${r} ${r} 0 1 0 ${cx} ${cy + r}A${r} ${r} 0 1 0 ${cx} ${cy - r}Z`;
+      } else {
+        const a2 = ang + f * 2 * Math.PI, lg = f > 0.5 ? 1 : 0, c = Math.cos, s = Math.sin;
+        d = `M${(cx + R * c(ang)).toFixed(2)} ${(cy + R * s(ang)).toFixed(2)}A${R} ${R} 0 ${lg} 1 ${(cx + R * c(a2)).toFixed(2)} ${(cy + R * s(a2)).toFixed(2)}L${(cx + r * c(a2)).toFixed(2)} ${(cy + r * s(a2)).toFixed(2)}A${r} ${r} 0 ${lg} 0 ${(cx + r * c(ang)).toFixed(2)} ${(cy + r * s(ang)).toFixed(2)}Z`;
+        ang = a2;
+      }
+      return { d, col, x, f };
+    });
+    return (
+      <div className="space-y-3">
+        <p className="text-xs" style={{ color: pal.label }}>{cs}</p>
+        <svg viewBox="0 0 220 220" className="w-48 h-48 mx-auto block" role="img" aria-label="Reparto del valor total por activo">
+          {paths.map((p, i) => (
+            <path key={i} d={p.d} fill={p.col} fillRule="evenodd" stroke={pal.surface} strokeWidth="2"
+              opacity={hi != null && hi !== i ? 0.35 : 1} onClick={() => setHi(hi === i ? null : i)} style={{ cursor: 'pointer' }}>
+              <title>{p.x.n}: {fmt1.format(p.f * 100)} % · {money(p.x.v)}</title>
+            </path>
+          ))}
+          <text x="110" y="104" textAnchor="middle" fontSize="11" fill={pal.label}>{hi != null ? paths[hi].x.n : 'Total'}</text>
+          <text x="110" y="124" textAnchor="middle" fontSize="15" fontWeight="600" fill={pal.ink}>{money(hi != null ? paths[hi].x.v : tot)}</text>
+        </svg>
+        <ul className="space-y-1.5">
+          {paths.map((p, i) => (
+            <li key={i} onClick={() => setHi(hi === i ? null : i)}
+              className="flex items-center gap-2 text-sm cursor-pointer" style={{ opacity: hi != null && hi !== i ? 0.45 : 1 }}>
+              <i className="inline-block w-3 h-3 rounded-sm shrink-0" style={{ background: p.col }} />
+              <span className="flex-1 min-w-0 truncate font-medium">{p.x.n}</span>
+              <span className="text-xs shrink-0" style={{ color: pal.label }}>{fmt1.format(p.f * 100)} % · {money(p.x.v)}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
+  // Evolución de todos los años: lo que tenés vs. lo que fuiste poniendo
+  const EvoChart = ({ pts, pal, isDarkMode }) => {
+    const [hi, setHi] = useState(null);
+    const ref = useRef(null);
+    const n = pts.length;
+    const W = 360, H = 250, pl = 58, pr = 12, pt = 14, pb = 34, iw = W - pl - pr, ih = H - pt - pb;
+    let max = 0; pts.forEach((p) => { max = Math.max(max, p.t, p.c); });
+    const tk = niceTicks(max * 1.05), top = tk[tk.length - 1] || 1;
+    const X = (i) => pl + (n === 1 ? 0 : i / (n - 1) * iw), Y = (v) => pt + ih - v / top * ih;
+    const dT = pts.map((p, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(p.t).toFixed(1)).join('');
+    const dC = pts.map((p, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(p.c).toFixed(1)).join('');
+    const area = dT + 'L' + X(n - 1).toFixed(1) + ' ' + (pt + ih) + 'L' + X(0).toFixed(1) + ' ' + (pt + ih) + 'Z';
+    const lp = pts[n - 1], gap = lp.t - lp.c;
+    const move = (e) => {
+      const rc = ref.current.getBoundingClientRect();
+      if (!rc.width) return;
+      const x = (e.clientX - rc.left) / rc.width * W;
+      setHi(Math.max(0, Math.min(n - 1, Math.round((x - pl) / iw * (n - 1)))));
+    };
+    let lastY = null;
+    return (
+      <div className="space-y-3">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: pal.label }}>
+          <span className="flex items-center gap-1.5"><i className="inline-block w-3 h-0.5 rounded" style={{ background: pal.c[0] }} />Lo que tenés ({money(lp.t)})</span>
+          <span className="flex items-center gap-1.5"><i className="inline-block w-3 border-t-2 border-dashed" style={{ borderColor: pal.c[1] }} />Lo que fuiste poniendo ({money(lp.c)})</span>
+        </div>
+        <div className="relative" ref={ref} style={{ touchAction: 'pan-y' }} onPointerMove={move} onPointerDown={move} onPointerLeave={() => setHi(null)}>
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block" role="img" aria-label="Evolución del valor total y de lo aportado, mes a mes">
+            {tk.map((v) => <g key={v}><line x1={pl} x2={W - pr} y1={Y(v)} y2={Y(v)} stroke={pal.line} strokeWidth="1" /><text x={pl - 8} y={Y(v) + 4} textAnchor="end" fontSize="11" fill={pal.label}>{shortMoney(v)}</text></g>)}
+            {pts.map((p, i) => {
+              if (p.y === lastY) return null;
+              lastY = p.y; const x = X(i);
+              return <g key={'y' + p.y}><line x1={x} x2={x} y1={pt} y2={pt + ih} stroke={pal.line} strokeWidth="1" strokeDasharray="2 4" /><text x={x + 4} y={H - 12} fontSize="11" fill={pal.label}>{p.y}</text></g>;
+            })}
+            <path d={area} fill={pal.c[0]} opacity="0.1" />
+            <path d={dC} fill="none" stroke={pal.c[1]} strokeWidth="2.5" strokeDasharray="6 5" strokeLinejoin="round" strokeLinecap="round" />
+            <path d={dT} fill="none" stroke={pal.c[0]} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+            <circle cx={X(n - 1)} cy={Y(lp.t)} r="4.5" fill={pal.c[0]} stroke={pal.surface} strokeWidth="2" />
+            <circle cx={X(n - 1)} cy={Y(lp.c)} r="4" fill={pal.c[1]} stroke={pal.surface} strokeWidth="2" />
+            {hi != null && <line x1={X(hi)} x2={X(hi)} y1={pt} y2={pt + ih} stroke={pal.muted} strokeWidth="1" />}
+          </svg>
+          {hi != null && (
+            <ChartTip dark={isDarkMode} left={X(hi) / W * 100} align={tipAlign(hi, n)}>
+              <b>{MESC[pts[hi].m]} {pts[hi].y}</b>
+              <TipRow k="Tenés">{money(pts[hi].t)}</TipRow>
+              <TipRow k="Pusiste">{money(pts[hi].c)}</TipRow>
+              <TipRow k="Diferencia"><Delta v={pts[hi].t - pts[hi].c} money /></TipRow>
+            </ChartTip>
+          )}
+        </div>
+        <p className="text-xs" style={{ color: pal.label }}>
+          La diferencia entre las dos líneas es lo que ganaron (o perdieron) tus inversiones: hoy {gap >= 0 ? 'son ' : 'son −'}
+          <b className={gap >= 0 ? 'text-green-500' : 'text-red-500'}>{money(Math.abs(gap))}</b>. «Lo que fuiste poniendo» arranca con lo que tenías el primer mes cargado y le suma tus aportes. Tocá el gráfico para ver cada mes.
+        </p>
+      </div>
+    );
+  };
+
   // ---------- Hoja: un activo (nombre, tipo, valores, vendido, eliminar) ----------
   const AssetSheet = ({ isDarkMode, asset, year, years, onClose, writeAsset, deleteAsset, toastUndo, notify, btn, btn2 }) => {
     const a = asset;
@@ -614,6 +852,14 @@
       Object.keys(data.aportes).forEach((y) => { set[y] = 1; });
       return Object.keys(set).map(Number).filter((y) => y >= 2000 && y <= 2100).sort(byNum);
     }, [data.activos, data.aportes, ym.y]);
+    const pal = palette(isDarkMode);
+    const yearRows = useMemo(() => years.map((y) => yearStats(data.activos, data.aportes, y)).filter(Boolean), [years, data.activos, data.aportes]);
+    const evoPts = useMemo(() => seriesAll(data.activos, data.aportes, years), [years, data.activos, data.aportes]);
+    const panelRef = useRef(null);
+    const goYear = (y) => {
+      setYear(y);
+      setTimeout(() => { if (panelRef.current) panelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
+    };
     const moveMonth = (d) => setYm(({ y, m }) => {
       let nm = m + d, ny = y;
       if (nm < 0) { nm = 11; ny = y - 1; } else if (nm > 11) { nm = 0; ny = y + 1; }
@@ -836,8 +1082,39 @@
           </p>
         </div>
 
+        {/* Indicadores del año */}
+        {loaded && model.latest >= 0 && (() => {
+          const L = model.latest, t = model.totals[L], p = L > 0 ? model.totals[L - 1] : model.ini;
+          let apSum = 0, hasAp = false;
+          model.ap.forEach((v, m) => { if (v != null && m <= L) { apSum += v; hasAp = true; } });
+          let gsum = 0, from = -1;
+          model.gains.forEach((g, m) => { if (g != null && m <= L) { gsum += g; if (from < 0) from = m; } });
+          const d = p != null ? t - p : null;
+          const prevName = MES[(L + 11) % 12];
+          const kc = `${card} !p-3`;
+          return (
+            <div className="grid grid-cols-3 gap-2">
+              <div className={kc}>
+                <p className={`text-[10px] font-bold uppercase tracking-wider ${sub}`}>Cambio vs {prevName}</p>
+                <p className="text-sm font-bold mt-1">{d == null ? <span className="opacity-50">—</span> : <Delta v={d} money />}</p>
+                <p className={`text-[10px] mt-0.5 ${sub}`}>{d == null ? 'Sin datos del mes anterior' : pctText(d / p * 100)}</p>
+              </div>
+              <div className={kc}>
+                <p className={`text-[10px] font-bold uppercase tracking-wider ${sub}`}>Aportado {ym.y}</p>
+                <p className={`text-sm font-bold mt-1 ${txt}`}>{hasAp ? money(apSum) : <span className="opacity-50 font-medium">Sin cargar</span>}</p>
+                <p className={`text-[10px] mt-0.5 ${sub}`}>{hasAp ? `hasta ${MES[L]}` : 'Cargalo en «Pusiste este mes»'}</p>
+              </div>
+              <div className={kc}>
+                <p className={`text-[10px] font-bold uppercase tracking-wider ${sub}`}>Ganancia {ym.y}</p>
+                <p className="text-sm font-bold mt-1">{from < 0 ? <span className="opacity-50">—</span> : <Delta v={gsum} money />}</p>
+                <p className={`text-[10px] mt-0.5 ${sub}`}>{from < 0 ? `Falta el cierre de ${ym.y - 1}` : `${MES[from]} a ${MES[L]}${hasAp ? '' : ', sin descontar aportes'}`}</p>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Mes a mes */}
-        <div className={`${card} space-y-4`}>
+        <div ref={panelRef} className={`${card} space-y-4`}>
           <div className="flex items-center justify-between gap-2">
             <h2 className={`font-bold text-base ${txt}`}>Mes a mes</h2>
             <div className="flex gap-2">
@@ -954,6 +1231,75 @@
             <p className={`text-xs ${sub}`}>Podés traer todo lo de tu app anterior importando su copia de seguridad.</p>
           </div>
         )}
+
+        {/* Gráfico del año */}
+        {loaded && model.latest >= 0 && (
+          <div className={`${card} space-y-3`}>
+            <h2 className={`font-bold text-base ${txt}`}>Valor total por mes · {ym.y}</h2>
+            <YearChart model={model} pal={pal} isDarkMode={isDarkMode} />
+          </div>
+        )}
+
+        {/* Dónde está la plata */}
+        {loaded && model.latest >= 0 && (
+          <div className={`${card} space-y-3`}>
+            <h2 className={`font-bold text-base ${txt}`}>Dónde está tu plata en {MES[model.latest]}</h2>
+            <div className={txt}><CompDonut model={model} pal={pal} isDarkMode={isDarkMode} /></div>
+          </div>
+        )}
+
+        {/* Evolución de todos los años */}
+        {loaded && evoPts.length >= 2 && (
+          <div className={`${card} space-y-3`}>
+            <h2 className={`font-bold text-base ${txt}`}>Evolución de todos los años</h2>
+            <EvoChart pts={evoPts} pal={pal} isDarkMode={isDarkMode} />
+          </div>
+        )}
+
+        {/* Resumen por año */}
+        {loaded && yearRows.length > 0 && (() => {
+          let tAp = 0, tG = 0, anyG = false, anyAp = false;
+          yearRows.forEach((r) => { if (r.hasAp) { tAp += r.aportado; anyAp = true; } if (r.ganancia != null) { tG += r.ganancia; anyG = true; } });
+          const th = `text-[10px] font-bold uppercase tracking-wider ${sub} text-right px-2 py-2`;
+          const td = 'text-right px-2 py-2.5 text-xs font-semibold whitespace-nowrap';
+          const rowB = `border-t ${isDarkMode ? 'border-slate-800' : 'border-gray-100'}`;
+          const dash = <span className="opacity-50">—</span>;
+          return (
+            <div className={`${card} space-y-3`}>
+              <h2 className={`font-bold text-base ${txt}`}>Resumen por año</h2>
+              <div className="overflow-x-auto -mx-1">
+                <table className={`w-full ${txt}`}>
+                  <thead><tr>
+                    <th className={`${th} !text-left`}>Año</th><th className={th}>Cierre</th><th className={th}>Aportado</th><th className={th}>Ganancia</th><th className={th}>Rend.</th>
+                  </tr></thead>
+                  <tbody>
+                    {yearRows.map((r) => (
+                      <tr key={r.y} className={`${rowB} ${r.y === ym.y ? (isDarkMode ? 'bg-blue-500/10' : 'bg-blue-50') : ''}`}>
+                        <td className="px-2 py-2.5 text-left">
+                          <button onClick={() => goYear(r.y)} title={`Ver ${r.y}`} className="text-sm font-bold text-blue-500">{r.y}</button>
+                        </td>
+                        <td className={td}>{money(r.cierre)}<span className={`block text-[10px] font-normal ${sub}`}>{MES[r.latest]}</span></td>
+                        <td className={td}>{r.hasAp ? money(r.aportado) : dash}</td>
+                        <td className={td}>{r.ganancia == null ? dash : <><Delta v={r.ganancia} money />{r.from > 0 && <span className={`block text-[10px] font-normal ${sub}`}>desde {MES[r.from]}</span>}</>}</td>
+                        <td className={td}>{r.pct == null || !isFinite(r.pct) ? dash : <span className={r.pct > 0 ? 'text-green-500' : r.pct < 0 ? 'text-red-500' : ''}>{r.pct > 0 ? '▲ ' : r.pct < 0 ? '▼ ' : ''}{fmt1.format(Math.abs(r.pct))} %</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className={rowB}>
+                      <td className="px-2 py-2.5 text-left text-xs font-bold">Todos</td>
+                      <td className={td}>{money(yearRows[yearRows.length - 1].cierre)}</td>
+                      <td className={td}>{anyAp ? money(tAp) : dash}</td>
+                      <td className={td}>{anyG ? <Delta v={tG} money /> : dash}</td>
+                      <td className={td}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <p className={`text-xs ${sub}`}>Ganancia: lo que subió el total sin contar lo que aportaste. Rendimiento: esa ganancia sobre lo que tenías al empezar más lo que fuiste aportando. Tocá un año para verlo.</p>
+            </div>
+          );
+        })()}
 
         {/* Importar */}
         <div className={`${card} space-y-3`}>

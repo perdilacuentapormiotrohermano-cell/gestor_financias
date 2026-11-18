@@ -1173,6 +1173,7 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
   const [txAmountInput, setTxAmountInput] = useState('');
   const [txDescription, setTxDescription] = useState('');
   const [txCategoryId, setTxCategoryId] = useState('');
+  const [txSavedFor, setTxSavedFor] = useState(''); // categoría para la que se junta un aporte (opcional)
   const [txBusy, setTxBusy] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState('');
@@ -1250,10 +1251,12 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
           amount: amt,
           description: txDescription.trim() || (txType === 'aporte' ? 'Aporte al fondo' : (tripCategories.find(c => c.id === txCategoryId)?.name || 'Gasto')),
           category: txCategoryId || (tripCategories[0]?.id || 'otros'),
+          savedFor: txType === 'aporte' ? txSavedFor : '',
           date: new Date().toISOString()
         });
         setTxAmountInput('');
         setTxDescription('');
+        setTxSavedFor('');
       } catch (err) { /* noop */ }
       setTxBusy(false);
     };
@@ -1315,6 +1318,10 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
           )}
         </div>
 
+        {window.TripSavingsCard && (
+          <window.TripSavingsCard trip={trip} isDarkMode={isDarkMode} formatMoney={formatMoney} cardCls={cardCls} labelCls={labelCls} />
+        )}
+
         <div className={`${cardCls} rounded-2xl p-4 shadow-sm border mb-6`}>
           <div className="flex items-center gap-2 mb-2">
             <UsersIcon />
@@ -1375,6 +1382,16 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
               placeholder={txType === 'aporte' ? 'Descripción (opcional)' : 'Descripción (ej. Cena, Hotel)'}
               className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm`}
             />
+            {txType === 'aporte' && tripCategories.length > 0 && (
+              <select
+                value={txSavedFor}
+                onChange={e => setTxSavedFor(e.target.value)}
+                className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm`}
+              >
+                <option value="">Aporte general (sin categoría)</option>
+                {tripCategories.map(c => <option key={c.id} value={c.id}>Para: {c.name}</option>)}
+              </select>
+            )}
             {txType === 'gasto' && (
               <select
                 value={txCategoryId || (tripCategories[0]?.id || '')}
@@ -1397,14 +1414,14 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
               <div className={`text-center ${labelCls} ${cardCls} text-sm p-6 rounded-2xl border`}>Todavía no hay movimientos en este viaje.</div>
             ) : (
               tripTxs.map(t => {
-                const cat = tripCategories.find(c => c.id === t.category);
+                const cat = t.type === 'aporte' ? tripCategories.find(c => c.id === t.savedFor) : tripCategories.find(c => c.id === t.category);
                 return (
                   <div key={t.id} className={`${cardCls} rounded-2xl p-3.5 shadow-sm border flex justify-between items-center gap-2`}>
                     <div className="min-w-0 flex-1">
                       <p className={`font-semibold text-sm truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.description}</p>
                       <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                         <span className={`text-[11px] ${labelCls}`}>{new Date(t.date).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}</span>
-                        {t.type === 'gasto' && cat && <><span className={`w-1 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span><span className={`text-[11px] ${labelCls}`}>{cat.name}</span></>}
+                        {cat && <><span className={`w-1 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span><span className={`text-[11px] ${labelCls}`}>{cat.name}</span></>}
                         <span className={`w-1 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
                         <span className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded-md font-semibold">
                           {t.createdBy === authUser.uid ? 'Vos' : (t.createdByEmail ? t.createdByEmail.split('@')[0] : 'Miembro')}
@@ -2363,6 +2380,7 @@ function ExpenseTrackerApp() {
       amount: parseFloat(tx.amount) || 0,
       description: tx.description || '',
       category: tx.category || 'otros',
+      ...(tx.type === 'aporte' && tx.savedFor ? { savedFor: tx.savedFor } : {}),
       date: tx.date || new Date().toISOString(),
       createdBy: authUser.uid,
       createdByEmail: authUser.email || ''

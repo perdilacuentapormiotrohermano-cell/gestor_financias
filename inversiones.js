@@ -1352,4 +1352,7 @@
   };
 
   window.InversionesView = InversionesView;
+
+  // Piezas compartidas con ahorros.js (se carga después)
+  window.InvShared = { Sheet, Delta, fieldCls, lblCls, parseNum, numToText, pad, fmt0, fmt1, fmt2, cleanObj, palette, niceTicks, MES, MESC, fdate };
 })();

@@ -1319,7 +1319,7 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
         </div>
 
         {window.TripSavingsCard && (
-          <window.TripSavingsCard trip={trip} isDarkMode={isDarkMode} formatMoney={formatMoney} cardCls={cardCls} labelCls={labelCls} />
+          <window.TripSavingsCard key={trip.id} trip={trip} isDarkMode={isDarkMode} formatMoney={formatMoney} cardCls={cardCls} labelCls={labelCls} />
         )}
 
         <div className={`${cardCls} rounded-2xl p-4 shadow-sm border mb-6`}>
@@ -3181,10 +3181,13 @@ function ExpenseTrackerApp() {
     };
 
     const activeTrip = trips.find(t => t.id === settings.activeTripId) || null;
+    const tripCalc = (activeTrip && window.TripSavings) ? window.TripSavings.calc(activeTrip) : null;
+    const tripSaving = !!(tripCalc && tripCalc.phase === 'ahorro' && tripCalc.meta > 0);
     const [quickTrip, setQuickTrip] = useState(null); // { type: 'gasto' | 'aporte' }
     const [quickAmount, setQuickAmount] = useState('');
     const [quickDesc, setQuickDesc] = useState('');
     const [quickCatId, setQuickCatId] = useState('');
+    const [quickSavedFor, setQuickSavedFor] = useState('');
     const [quickBusy, setQuickBusy] = useState(false);
     const parseQuickAmt = (str) => {
       if (!str) return 0;
@@ -3202,7 +3205,7 @@ function ExpenseTrackerApp() {
     };
     const openQuickTrip = (type) => {
       setQuickTrip({ type });
-      setQuickAmount(''); setQuickDesc('');
+      setQuickAmount(''); setQuickDesc(''); setQuickSavedFor('');
       setQuickCatId((activeTrip && activeTrip.categories && activeTrip.categories[0]?.id) || '');
     };
     const submitQuickTrip = async (e) => {
@@ -3216,6 +3219,7 @@ function ExpenseTrackerApp() {
           amount: amt,
           description: quickDesc.trim() || (quickTrip.type === 'aporte' ? 'Aporte al fondo' : ((activeTrip.categories || []).find(c => c.id === quickCatId)?.name || 'Gasto')),
           category: quickCatId,
+          savedFor: quickTrip.type === 'aporte' ? quickSavedFor : '',
           date: new Date().toISOString()
         });
         setQuickTrip(null);
@@ -3348,22 +3352,60 @@ function ExpenseTrackerApp() {
               const disponible = aportado - spent;
               const budget = parseFloat(activeTrip.budget || 0);
               const pct = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
+              if (tripSaving) {
+                // Antes de la salida: lo ahorrado contra lo que hay que juntar, y cuánto apartar por mes
+                const pl = tripCalc.plan, meta = tripCalc.meta;
+                const pctSaved = Math.min((aportado / meta) * 100, 100);
+                const dd = tripCalc.start ? tripCalc.start.split('-').reverse().slice(0, 2).join('/') : '';
+                return (
+                  <>
+                    <div className="grid grid-cols-2 gap-3 mt-3">
+                      <div>
+                        <p className="text-orange-100 text-[11px]">🏦 Ahorrado</p>
+                        <p className="text-lg font-bold">{formatCurrency(aportado)}</p>
+                      </div>
+                      <div>
+                        <p className="text-orange-100 text-[11px]">🎯 Para juntar</p>
+                        <p className="text-lg font-bold">{formatCurrency(meta)}</p>
+                      </div>
+                    </div>
+                    <div className="w-full bg-black/20 h-2 rounded-full overflow-hidden mt-3">
+                      <div className={`h-full rounded-full ${pctSaved >= 100 ? 'bg-green-300' : 'bg-white'}`} style={{ width: `${pctSaved}%` }}></div>
+                    </div>
+                    <p className="text-[11px] text-orange-50 mt-2 font-medium">
+                      {pl.done
+                        ? '✅ Ya juntaste todo lo que necesitabas'
+                        : <>Faltan {formatCurrency(pl.falta)}{pl.n > 0 && <> · apartá unos {formatCurrency(pl.mes)} por mes hasta el {dd}</>}</>}
+                    </p>
+                    {!pl.done && pl.state && (
+                      <p className="text-[11px] font-bold mt-1 text-white/90">
+                        {pl.state === 'up' ? '▲ Vas adelantado con tu plan' : pl.state === 'down' ? '▼ Vas atrasado con tu plan' : '● Vas al día con tu plan'}
+                      </p>
+                    )}
+                    {spent > 0 && <p className="text-[11px] text-orange-100 mt-1">Ya gastaste {formatCurrency(spent)} · Disponible {formatCurrency(disponible)}</p>}
+                  </>
+                );
+              }
+              // Durante el viaje: lo que queda y lo que se gastó, sin entrar a la pestaña del viaje
               return (
                 <>
                   <div className="grid grid-cols-2 gap-3 mt-3">
                     <div>
                       <p className="text-orange-100 text-[11px]">💰 Disponible</p>
-                      <p className="text-lg font-bold">{formatCurrency(disponible)}</p>
+                      <p className={`text-lg font-bold ${disponible < 0 ? 'text-red-200' : ''}`}>{formatCurrency(disponible)}</p>
                     </div>
                     <div>
-                      <p className="text-orange-100 text-[11px]">🎯 Presupuesto</p>
-                      <p className="text-lg font-bold">{formatCurrency(budget)}</p>
+                      <p className="text-orange-100 text-[11px]">💸 Gastado</p>
+                      <p className="text-lg font-bold">{formatCurrency(spent)}</p>
                     </div>
                   </div>
                   {budget > 0 && (
-                    <div className="w-full bg-black/20 h-2 rounded-full overflow-hidden mt-3">
-                      <div className={`h-full rounded-full ${pct >= 90 ? 'bg-red-400' : 'bg-white'}`} style={{ width: `${pct}%` }}></div>
-                    </div>
+                    <>
+                      <div className="w-full bg-black/20 h-2 rounded-full overflow-hidden mt-3">
+                        <div className={`h-full rounded-full ${pct >= 90 ? 'bg-red-400' : 'bg-white'}`} style={{ width: `${pct}%` }}></div>
+                      </div>
+                      <p className="text-[11px] text-orange-100 mt-1.5 font-medium">🎯 Presupuesto {formatCurrency(budget)} · {Math.round((spent / budget) * 100)}% usado</p>
+                    </>
                   )}
                 </>
               );
@@ -3456,7 +3498,7 @@ function ExpenseTrackerApp() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-              {activeTrip ? `✈️ Gastos del viaje: ${activeTrip.name}` : 'Presupuestos / Categorías'}
+              {activeTrip ? (tripSaving ? `🏦 Ahorro del viaje: ${activeTrip.name}` : `✈️ Gastos del viaje: ${activeTrip.name}`) : 'Presupuestos / Categorías'}
             </h3>
             {activeTrip && (
               <button onClick={() => setSettings(s => ({ ...s, activeTripId: null }))} className="text-xs font-bold text-blue-500 shrink-0">
@@ -3467,7 +3509,9 @@ function ExpenseTrackerApp() {
           <div className="space-y-3">
             {activeTrip ? (
               (activeTrip.categories || []).map(cat => {
-                const spent = (activeTrip.transactions || []).filter(tx => tx.type === 'gasto' && tx.category === cat.id).reduce((s, tx) => s + parseFloat(tx.amount || 0), 0);
+                const spentReal = (activeTrip.transactions || []).filter(tx => tx.type === 'gasto' && tx.category === cat.id).reduce((s, tx) => s + parseFloat(tx.amount || 0), 0);
+                // Antes de la salida se muestra lo ahorrado por categoría; durante el viaje, lo gastado
+                const spent = tripSaving ? ((tripCalc.rows.find(r => r.id === cat.id) || {}).saved || 0) : spentReal;
                 const limit = parseFloat(cat.budget || 0);
                 const percent = limit > 0 ? Math.min((spent / limit) * 100, 100) : 0;
 
@@ -3484,10 +3528,10 @@ function ExpenseTrackerApp() {
                     {limit > 0 && (
                       <div className={`w-full ${isDarkMode ? 'bg-slate-800/60' : 'bg-gray-100'} h-2.5 rounded-full overflow-hidden`}>
                         <div
-                          className={`h-full rounded-full transition-all duration-500 ${percent >= 90 ? 'bg-red-500' : percent >= 75 ? 'bg-orange-400' : 'bg-amber-500'}`}
+                          className={`h-full rounded-full transition-all duration-500 ${tripSaving ? (percent >= 100 ? 'bg-emerald-500' : 'bg-teal-500') : (percent >= 90 ? 'bg-red-500' : percent >= 75 ? 'bg-orange-400' : 'bg-amber-500')}`}
                           style={{
                             width: `${percent}%`,
-                            boxShadow: isDarkMode ? `0 0 10px 1px ${percent >= 90 ? 'rgba(239,68,68,0.7)' : percent >= 75 ? 'rgba(251,146,60,0.7)' : 'rgba(245,158,11,0.7)'}` : 'none'
+                            boxShadow: isDarkMode ? `0 0 10px 1px ${tripSaving ? 'rgba(20,184,166,0.6)' : (percent >= 90 ? 'rgba(239,68,68,0.7)' : percent >= 75 ? 'rgba(251,146,60,0.7)' : 'rgba(245,158,11,0.7)')}` : 'none'
                           }}
                         ></div>
                       </div>
@@ -3620,6 +3664,16 @@ function ExpenseTrackerApp() {
                   placeholder={quickTrip.type === 'aporte' ? 'Descripción (opcional)' : 'Descripción (ej. Cena, Hotel)'}
                   className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-3 outline-none text-sm`}
                 />
+                {quickTrip.type === 'aporte' && (activeTrip.categories || []).length > 0 && (
+                  <select
+                    value={quickSavedFor}
+                    onChange={e => setQuickSavedFor(e.target.value)}
+                    className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-3 outline-none text-sm`}
+                  >
+                    <option value="">Aporte general (sin categoría)</option>
+                    {(activeTrip.categories || []).map(c => <option key={c.id} value={c.id}>Para: {c.name}</option>)}
+                  </select>
+                )}
                 {quickTrip.type === 'gasto' && (activeTrip.categories || []).length > 0 && (
                   <select
                     value={quickCatId}

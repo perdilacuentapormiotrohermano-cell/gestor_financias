@@ -6,6 +6,7 @@
 // para qué categoría se juntó esa plata; sin eso cuenta solo en el fondo general.
 // ============================================================
 (function () {
+  const { useState } = React;
   const pad = (n) => String(n).padStart(2, '0');
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
@@ -20,6 +21,14 @@
     const d = idx - cur;
     return d >= 0 ? d + 1 : 0;
   };
+
+  // Fase del viaje: 'ahorro' mientras falta para la salida, 'viaje' desde el día de inicio.
+  // Sin fecha de salida: 'viaje' apenas hay un gasto cargado.
+  function phaseOf(trip, now) {
+    const start = DATE_RE.test(String(trip.startDate || '')) ? trip.startDate : '';
+    if (start) return localISO(now || new Date()) < start ? 'ahorro' : 'viaje';
+    return (trip.transactions || []).some((t) => t.type === 'gasto') ? 'viaje' : 'ahorro';
+  }
 
   // Resumen de ahorro de un viaje
   function calc(trip, today) {
@@ -61,7 +70,7 @@
       spent: sum(gastos.filter((t) => t.category === c.id))
     }));
     const assigned = rows.reduce((s, r) => s + r.saved, 0);
-    return { meta, ah, gas, disp: ah - gas, start, plan, rows, unassigned: ah - assigned };
+    return { meta, ah, gas, disp: ah - gas, start, plan, rows, unassigned: ah - assigned, phase: phaseOf(trip, today) };
   }
 
   const Bar = ({ meta, ah, gas, dark, small }) => {
@@ -88,7 +97,9 @@
   };
 
   const TripSavingsCard = ({ trip, isDarkMode, formatMoney, cardCls, labelCls }) => {
+    const [view, setView] = useState(null); // null = automático según la fase del viaje
     const c = calc(trip);
+    const mode = view || c.phase;
     const dark = isDarkMode;
     const tx = dark ? 'text-white' : 'text-gray-900';
     const box = `${cardCls} rounded-2xl p-4 shadow-sm border mb-6`;
@@ -104,12 +115,66 @@
     }
     const p = c.plan, pct = Math.round(Math.max(0, Math.min(100, c.ah / c.meta * 100)));
     const showCats = c.rows.length > 0 && (c.rows.some((r) => r.budget > 0 || r.saved > 0 || r.spent > 0));
+    const tabs = (
+      <div className={`${dark ? 'bg-slate-800' : 'bg-gray-100'} p-0.5 rounded-lg flex gap-0.5 shrink-0`}>
+        {[['ahorro', 'Ahorro'], ['viaje', 'Gastos']].map(([k, l]) => (
+          <button key={k} type="button" onClick={() => setView(k)}
+            className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${mode === k ? (k === 'ahorro' ? 'bg-teal-500 text-white shadow-sm' : 'bg-orange-500 text-white shadow-sm') : labelCls}`}>{l}</button>
+        ))}
+      </div>
+    );
+
+    // ---- Vista de gastos: lo gastado de cada categoría contra su presupuesto ----
+    if (mode === 'viaje') {
+      const rows = c.rows.filter((r) => r.budget > 0 || r.spent > 0);
+      return (
+        <div className={box}>
+          <div className="flex items-center justify-between mb-3 gap-2">
+            <p className={`text-xs font-bold uppercase tracking-wider ${labelCls}`}>Gastos por categoría</p>
+            {tabs}
+          </div>
+          {!rows.length ? (
+            <p className={`text-xs ${labelCls}`}>Todavía no hay gastos ni presupuestos por categoría.</p>
+          ) : (
+            <div className="space-y-3">
+              {rows.map((r) => {
+                const pc = r.budget > 0 ? Math.min(100, r.spent / r.budget * 100) : 0;
+                const over = r.budget > 0 && r.spent > r.budget;
+                const barCls = pc >= 90 ? 'bg-red-500' : pc >= 75 ? 'bg-orange-400' : 'bg-amber-500';
+                return (
+                  <div key={r.id}>
+                    <div className="flex justify-between items-baseline gap-2">
+                      <span className={`text-sm font-semibold truncate ${tx}`}>{r.name}</span>
+                      <span className={`text-xs font-semibold shrink-0 ${dark ? 'text-slate-300' : 'text-gray-600'}`}>
+                        {formatMoney(r.spent)}{r.budget > 0 && <span className={`font-normal ${labelCls}`}> / {formatMoney(r.budget)}</span>}
+                      </span>
+                    </div>
+                    {r.budget > 0 && (
+                      <div className={`${dark ? 'bg-slate-800' : 'bg-gray-100'} w-full h-2 rounded-full overflow-hidden mt-1`}>
+                        <div className={`h-full rounded-full ${barCls}`} style={{ width: `${pc}%` }} />
+                      </div>
+                    )}
+                    {over && <p className="text-[11px] text-red-500 font-bold mt-1">Te pasaste {formatMoney(r.spent - r.budget)}</p>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p className={`text-[11px] mt-3 pt-3 border-t ${dark ? 'border-slate-800' : 'border-gray-100'} ${labelCls}`}>
+            Ahorrado <b>{formatMoney(c.ah)}</b> de {formatMoney(c.meta)} · Gastado <b>{formatMoney(c.gas)}</b> · Disponible <b className={c.disp < 0 ? 'text-red-500' : ''}>{formatMoney(c.disp)}</b>
+          </p>
+        </div>
+      );
+    }
 
     return (
       <div className={box}>
-        <div className="flex items-center justify-between mb-2">
-          <p className={`text-xs font-bold uppercase tracking-wider ${labelCls}`}>Ahorro del viaje</p>
-          <span className="text-xs font-bold text-teal-500">{pct} %</span>
+        <div className="flex items-center justify-between mb-2 gap-2">
+          <div className="flex items-baseline gap-2">
+            <p className={`text-xs font-bold uppercase tracking-wider ${labelCls}`}>Ahorro del viaje</p>
+            <span className="text-xs font-bold text-teal-500">{pct} %</span>
+          </div>
+          {tabs}
         </div>
         <p className={`text-sm ${tx}`}><b>{formatMoney(c.ah)}</b> <span className={labelCls}>de {formatMoney(c.meta)}</span></p>
         <div className="mt-2"><Bar meta={c.meta} ah={c.ah} gas={c.gas} dark={dark} /></div>
@@ -124,15 +189,15 @@
           {p.done ? <li><b className="text-emerald-500">Ya juntaste todo lo que necesitabas.</b></li> : (
             <>
               <li>Te faltan <b>{formatMoney(p.falta)}</b>.</li>
-              {p.hasDate
-                ? (p.n > 0
-                  ? <li>Para llegar el {fdate(c.start)} tenés que apartar unos <b>{formatMoney(p.mes)}</b> por mes ({p.n} {p.n === 1 ? 'mes' : 'meses'}).</li>
-                  : <li>La fecha de salida ya pasó.</li>)
-                : <li>Si ponés la fecha de salida del viaje, te digo cuánto apartar por mes.</li>}
+              {c.phase === 'ahorro'
+                ? (p.hasDate
+                  ? (p.n > 0 ? <li>Para llegar el {fdate(c.start)} tenés que apartar unos <b>{formatMoney(p.mes)}</b> por mes ({p.n} {p.n === 1 ? 'mes' : 'meses'}).</li> : null)
+                  : <li>Si ponés la fecha de salida del viaje, te digo cuánto apartar por mes.</li>)
+                : <li>El viaje ya empezó: el plan mensual solo aplica antes de la salida.</li>}
             </>
           )}
         </ul>
-        {!p.done && <PaceChip plan={p} formatMoney={formatMoney} />}
+        {!p.done && c.phase === 'ahorro' && <PaceChip plan={p} formatMoney={formatMoney} />}
 
         {showCats && (
           <div className={`mt-4 pt-3 border-t ${dark ? 'border-slate-800' : 'border-gray-100'} space-y-3`}>
@@ -169,6 +234,6 @@
     );
   };
 
-  window.TripSavings = { calc };
+  window.TripSavings = { calc, phaseOf };
   window.TripSavingsCard = TripSavingsCard;
 })();

@@ -145,6 +145,13 @@ const DebouncedTextInput = ({ value, onCommit, type = 'text', placeholder, class
   );
 };
 
+// Nombre que se muestra de otra persona en un viaje: su nombre elegido, o la parte del mail como respaldo
+const tripMemberName = (trip, uid, email) => {
+  const chosen = ((trip && trip.memberNames && trip.memberNames[uid]) || '').trim();
+  if (chosen) return chosen;
+  return email ? email.split('@')[0] : 'Miembro';
+};
+
 const UsersIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
 );
@@ -1340,7 +1347,7 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
             {memberTotals.map(m => (
               <div key={m.uid} className={`flex justify-between items-center text-xs p-2 rounded-lg ${isDarkMode ? 'bg-slate-800/60' : 'bg-gray-50'}`}>
                 <span className={`font-semibold truncate ${isDarkMode ? 'text-slate-200' : 'text-gray-700'}`}>
-                  {m.uid === authUser.uid ? 'Vos' : (m.email ? m.email.split('@')[0] : 'Miembro')}
+                  {m.uid === authUser.uid ? 'Vos' : tripMemberName(trip, m.uid, m.email)}
                 </span>
                 <span className="text-right">
                   <span className="text-green-500 font-bold">{formatMoney(m.aportado)}</span>
@@ -1391,7 +1398,7 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
                 className={`w-full ${inputCls} border rounded-xl p-3 outline-none text-sm`}
               >
                 <option value="">Aporte general (sin categoría)</option>
-                {tripCategories.map(c => <option key={c.id} value={c.id}>Para: {c.name}</option>)}
+                {tripCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             )}
             {txType === 'gasto' && (
@@ -1426,7 +1433,7 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
                         {cat && <><span className={`w-1 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span><span className={`text-[11px] ${labelCls}`}>{cat.name}</span></>}
                         <span className={`w-1 h-1 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
                         <span className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded-md font-semibold">
-                          {t.createdBy === authUser.uid ? 'Vos' : (t.createdByEmail ? t.createdByEmail.split('@')[0] : 'Miembro')}
+                          {t.createdBy === authUser.uid ? 'Vos' : tripMemberName(trip, t.createdBy, t.createdByEmail)}
                         </span>
                       </div>
                     </div>
@@ -2088,6 +2095,21 @@ function ExpenseTrackerApp() {
       });
     });
   }, [authUser, tripIds, tripsCheckDone]);
+
+  // Mantener mi nombre para mostrar al día en cada viaje del que soy miembro (solo cuando mis ajustes ya se sincronizaron)
+  useEffect(() => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) return;
+    if (syncStatus !== 'synced') return;
+    const name = (settings.displayName || '').trim();
+    trips.forEach(t => {
+      if (!(t.members || []).includes(authUser.uid)) return;
+      const current = ((t.memberNames && t.memberNames[authUser.uid]) || '').trim();
+      if (current === name) return;
+      firebase.firestore().collection('trips').doc(t.id).update({
+        [`memberNames.${authUser.uid}`]: name ? name : firebase.firestore.FieldValue.delete()
+      }).catch(() => {});
+    });
+  }, [authUser, trips, settings.displayName, syncStatus]);
 
   useEffect(() => {
     return () => {
@@ -3476,11 +3498,11 @@ function ExpenseTrackerApp() {
                   <>
                     <div className="grid grid-cols-2 gap-3 mt-3">
                       <div>
-                        <p className="text-orange-100 text-[11px]">🏦 Ahorrado</p>
+                        <p className="text-orange-100 text-[11px]">Ahorrado</p>
                         <p className="text-lg font-bold">{formatCurrency(aportado)}</p>
                       </div>
                       <div>
-                        <p className="text-orange-100 text-[11px]">🎯 Para juntar</p>
+                        <p className="text-orange-100 text-[11px]">Para juntar</p>
                         <p className="text-lg font-bold">{formatCurrency(meta)}</p>
                       </div>
                     </div>
@@ -3526,8 +3548,8 @@ function ExpenseTrackerApp() {
               );
             })()}
             <div className="flex gap-2 mt-4">
-              <button onClick={() => openQuickTrip('gasto')} className="flex-1 bg-white/15 hover:bg-white/25 backdrop-blur-sm font-bold py-2 rounded-xl text-xs transition-colors">💸 Agregar Gasto</button>
-              <button onClick={() => openQuickTrip('aporte')} className="flex-1 bg-white/15 hover:bg-white/25 backdrop-blur-sm font-bold py-2 rounded-xl text-xs transition-colors">💰 Agregar Aporte</button>
+              <button onClick={() => openQuickTrip('gasto')} className="flex-1 bg-white/15 hover:bg-white/25 backdrop-blur-sm font-bold py-2 rounded-xl text-xs transition-colors">Agregar Gasto</button>
+              <button onClick={() => openQuickTrip('aporte')} className="flex-1 bg-white/15 hover:bg-white/25 backdrop-blur-sm font-bold py-2 rounded-xl text-xs transition-colors">Agregar Aporte</button>
             </div>
           </div>
         )}
@@ -3623,13 +3645,8 @@ function ExpenseTrackerApp() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-              {showTrip ? (tripSaving ? `🏦 Ahorro del viaje: ${activeTrip.name}` : `✈️ Gastos del viaje: ${activeTrip.name}`) : 'Presupuestos / Categorías'}
+              {showTrip ? (tripSaving ? `Ahorro del viaje: ${activeTrip.name}` : `Gastos del viaje: ${activeTrip.name}`) : 'Presupuestos / Categorías'}
             </h3>
-            {showTrip && (
-              <button onClick={() => switchHome('personal', 'right')} className="text-xs font-bold text-blue-500 shrink-0">
-                Ver mis categorías
-              </button>
-            )}
           </div>
           <div className="space-y-3">
             {showTrip ? (
@@ -3701,8 +3718,37 @@ function ExpenseTrackerApp() {
         <div>
           <div className="flex justify-between items-end mb-4">
             <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Actividad Reciente</h3>
-            <button onClick={() => { setSubTab('historial'); setActiveTab('history'); }} className="text-blue-500 text-sm font-medium">Ver todo</button>
+            <button onClick={() => { setSubTab(showTrip ? 'viajes' : 'historial'); setActiveTab('history'); }} className="text-blue-500 text-sm font-medium">Ver todo</button>
           </div>
+          {showTrip ? (
+            <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800 divide-slate-800' : 'bg-white border-gray-100 divide-gray-50'} rounded-3xl shadow-sm border divide-y overflow-hidden`}>
+              {(activeTrip.transactions || []).slice().sort((x, y) => new Date(y.date) - new Date(x.date)).slice(0, 3).map(tx => {
+                const isAporte = tx.type === 'aporte';
+                const catName = (activeTrip.categories || []).find(c => c.id === tx.category)?.name;
+                const d = new Date(tx.date);
+                const dateLabel = isNaN(d) ? '' : d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+                return (
+                  <div key={tx.id} className="flex justify-between items-center gap-2 p-4">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isAporte ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                        {isAporte ? <TrendingUpIcon /> : <TrendingDownIcon />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'} truncate`}>{tx.description || catName || (isAporte ? 'Aporte' : 'Gasto')}</p>
+                        <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} capitalize truncate`}>{[isAporte ? 'Aporte' : (catName || 'Gasto'), dateLabel].filter(Boolean).join(' • ')}</p>
+                      </div>
+                    </div>
+                    <span className={`font-bold whitespace-nowrap shrink-0 ${isAporte ? 'text-emerald-500' : (isDarkMode ? 'text-white' : 'text-gray-800')}`}>
+                      {isAporte ? '+' : '-'}{formatCurrency(parseFloat(tx.amount) || 0)}
+                    </span>
+                  </div>
+                );
+              })}
+              {(activeTrip.transactions || []).length === 0 && (
+                <div className={`p-6 text-center ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} text-sm`}>Todavía no hay movimientos en este viaje.</div>
+              )}
+            </div>
+          ) : (
           <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800 divide-slate-800' : 'bg-white border-gray-100 divide-gray-50'} rounded-3xl shadow-sm border divide-y overflow-hidden`}>
             {transactions.filter(t => isTransactionInSelectedMonth(t.date)).slice(0, 3).map(t => (
               <div key={t.id} className="flex justify-between items-center gap-2 p-4">
@@ -3736,6 +3782,7 @@ function ExpenseTrackerApp() {
               <div className={`p-6 text-center ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} text-sm`}>No hay movimientos este mes.</div>
             )}
           </div>
+          )}
         </div>
 
         <div>
@@ -3796,7 +3843,7 @@ function ExpenseTrackerApp() {
                     className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-3 outline-none text-sm`}
                   >
                     <option value="">Aporte general (sin categoría)</option>
-                    {(activeTrip.categories || []).map(c => <option key={c.id} value={c.id}>Para: {c.name}</option>)}
+                    {(activeTrip.categories || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 )}
                 {quickTrip.type === 'gasto' && (activeTrip.categories || []).length > 0 && (
@@ -5368,6 +5415,16 @@ function ExpenseTrackerApp() {
               >
                 <LogOutIcon /> Salir
               </button>
+            </div>
+            <div className="mt-3">
+              <label className={`block text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} uppercase tracking-wider mb-1.5`}>Tu nombre en los viajes</label>
+              <DebouncedTextInput
+                value={settings.displayName || ''}
+                onCommit={(v) => setSettings(prev => ({ ...prev, displayName: v.trim().slice(0, 24) }))}
+                placeholder="Ej. Seba"
+                className={`w-full ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'} border rounded-xl p-3 outline-none text-sm font-semibold`}
+              />
+              <p className={`text-[11px] mt-1.5 ${isDarkMode ? 'text-slate-500' : 'text-gray-400'}`}>Así te ven las otras personas en los viajes compartidos. Si lo dejás vacío, se usa la primera parte de tu mail.</p>
             </div>
             </>
           ) : (

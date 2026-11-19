@@ -1791,6 +1791,16 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
         </div>
       )}
 
+      {trips.length > 0 && window.TripSavings && window.TripSavings.exportCsv && (
+        <button
+          type="button"
+          onClick={() => window.TripSavings.exportCsv(trips, archivedTripIds)}
+          className={`w-full text-center text-xs font-bold py-2 mb-4 ${labelCls}`}
+        >
+          Exportar viajes (CSV)
+        </button>
+      )}
+
       <div className={`${cardCls} rounded-2xl p-4 shadow-sm border`}>
         <p className={`text-xs font-bold uppercase tracking-wider mb-2 ${labelCls}`}>¿Te invitaron a un viaje?</p>
         <form onSubmit={async (e) => {
@@ -4632,8 +4642,18 @@ function ExpenseTrackerApp() {
                 </form>
               )}
               <div className="space-y-2">
-                {categories.map(c => (
-                  <div key={c.id} className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-800' : 'bg-gray-50 border-gray-100'}`}>
+                {(() => {
+                  // Ordenadas por tipo: primero los ingresos y después los gastos (y el resto). Dentro de cada grupo se respeta el orden en que se crearon.
+                  const ORDER = { ingreso: 0, gasto: 1, ahorro: 2, transferencia: 3 };
+                  const GROUP = { ingreso: 'Ingresos', gasto: 'Gastos', ahorro: 'Ahorro', transferencia: 'Transferencias' };
+                  const rank = (t) => (t in ORDER ? ORDER[t] : 9);
+                  const sortedCats = categories.map((c, i) => ({ c, i })).sort((a, b) => (rank(a.c.type) - rank(b.c.type)) || (a.i - b.i)).map(x => x.c);
+                  return sortedCats.map((c, idx) => (
+                  <React.Fragment key={c.id}>
+                  {(idx === 0 || sortedCats[idx - 1].type !== c.type) && (
+                    <p className={`text-[10px] font-bold uppercase tracking-wider ${idx === 0 ? '' : 'pt-3'} pb-0.5 ${isDarkMode ? 'text-slate-500' : 'text-gray-400'}`}>{GROUP[c.type] || 'Otras'}</p>
+                  )}
+                  <div className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-800' : 'bg-gray-50 border-gray-100'}`}>
                     {editingCatRegId === c.id ? (
                       <form onSubmit={(e) => handleSaveEditCatReg(e, c.id)} className="space-y-2">
                         <input type="text" value={editCatRegName} onChange={e => setEditCatRegName(e.target.value)} className={`p-2 rounded-lg border w-full text-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-800'} outline-none`} required />
@@ -4664,7 +4684,9 @@ function ExpenseTrackerApp() {
                       </div>
                     )}
                   </div>
-                ))}
+                  </React.Fragment>
+                  ));
+                })()}
               </div>
             </div>
           </div>

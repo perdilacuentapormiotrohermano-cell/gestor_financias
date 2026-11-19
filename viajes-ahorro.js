@@ -426,7 +426,44 @@
     );
   };
 
+  // ============================================================
+  // Exportar los viajes a CSV (equivale al "Exportar ahorros" de la app de inversiones)
+  // Una hoja de resumen por categoría y otra con todos los movimientos. Separador ";" y UTF-8 con BOM para Excel.
+  // ============================================================
+  const csvQ = (x) => { x = x == null ? '' : String(x); return /[;"\r\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
+  const csvNum = (x) => (x == null ? '' : String(Math.round(x * 100) / 100).replace('.', ','));
+  const csvDate = (f) => (f ? f.split('-').reverse().join('/') : '');
+
+  function tripsCsv(trips, archivedIds) {
+    const arch = archivedIds || [];
+    const out = [['Resumen de viajes'], ['Viaje', 'Estado', 'Fecha de inicio', 'Fecha de fin', 'Categoría', 'Presupuesto', 'Ahorrado', 'Gastado', 'Disponible']];
+    const mov = [];
+    trips.forEach((t) => {
+      const c = calc(t), est = (arch.includes(t.id) || t.archived === true) ? 'Archivado' : 'Activo';
+      const fi = csvDate(DATE_RE.test(String(t.startDate || '')) ? t.startDate : ''), ff = csvDate(DATE_RE.test(String(t.endDate || '')) ? t.endDate : '');
+      c.rows.forEach((r) => out.push([t.name, est, fi, ff, r.name, r.budget > 0 ? csvNum(r.budget) : '', csvNum(r.saved), csvNum(r.spent), csvNum(r.saved - r.spent)]));
+      if (Math.abs(c.unassigned) > 0.005) out.push([t.name, est, fi, ff, 'Sin categoría', '', csvNum(c.unassigned), '', '']);
+      out.push([t.name, est, fi, ff, 'TOTAL', c.meta > 0 ? csvNum(c.meta) : '', csvNum(c.ah), csvNum(c.gas), csvNum(c.disp)]);
+      const nameOf = (id) => { const k = (t.categories || []).find((x) => x.id === id); return k ? k.name : ''; };
+      (t.transactions || []).forEach((x) => {
+        const amt = num(x.amount), gasto = x.type === 'gasto';
+        mov.push({ n: t.name, c: gasto ? nameOf(x.category) : (nameOf(x.savedFor) || 'Sin categoría'), f: txDay(x), tipo: gasto ? 'Gasto' : (amt < 0 ? 'Retiro' : 'Aporte'), v: gasto ? -amt : amt, note: x.description || '' });
+      });
+    });
+    out.push([]); out.push(['Movimientos']);
+    out.push(['Viaje', 'Categoría', 'Fecha', 'Tipo', 'Monto', 'Nota']);
+    mov.sort((a, b) => (a.n < b.n ? -1 : a.n > b.n ? 1 : a.f < b.f ? -1 : a.f > b.f ? 1 : 0));
+    mov.forEach((m) => out.push([m.n, m.c, csvDate(m.f), m.tipo, csvNum(m.v), m.note]));
+    return '\uFEFF' + out.map((r) => r.map(csvQ).join(';')).join('\r\n');
+  }
+  function exportTripsCsv(trips, archivedIds) {
+    const d = new Date(), name = `Viajes-${localISO(d)}.csv`;
+    const bl = new Blob([tripsCsv(trips, archivedIds)], { type: 'text/csv;charset=utf-8' }), u = URL.createObjectURL(bl), a = document.createElement('a');
+    a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 2000);
+  }
+
   window.TripAhorrosImport = TripAhorrosImport;
-  window.TripSavings = { calc, phaseOf, convertAhorro };
+  window.TripSavings = { calc, phaseOf, convertAhorro, tripsCsv, exportCsv: exportTripsCsv };
   window.TripSavingsCard = TripSavingsCard;
 })();

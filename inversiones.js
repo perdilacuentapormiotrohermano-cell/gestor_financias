@@ -476,6 +476,369 @@
     );
   };
 
+  // ---------- Importar (Excel, CSV, copia .json) y exportar ----------
+  const IMES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const monthIdx = (v) => {
+    if (typeof v !== 'string') return -1;
+    const t = norm(v).replace(/\.$/, '');
+    if (!t || t.length > 12) return -1;
+    let k = t.slice(0, 3); if (k === 'set') k = 'sep';
+    const i = IMES.indexOf(k); if (i < 0) return -1;
+    if (norm(MES[i]).indexOf(t) !== 0 && !(i === 8 && t.indexOf('set') === 0)) return -1;
+    return i;
+  };
+  const catOf = (name) => {
+    const t = norm(name);
+    if (t === 'acciones' || t === 'accion') return 'acciones';
+    if (t === 'cedears' || t === 'cedear') return 'cedears';
+    if (['fondos', 'fondos de inversion', 'fondo de inversion', 'fci', 'fondos comunes de inversion'].indexOf(t) >= 0) return 'fondos';
+    return null;
+  };
+  const cellNum = (v) => {
+    if (v == null || v === '') return null;
+    if (typeof v === 'number') return isFinite(v) ? v : null;
+    const n = parseNum(v); return (n == null || !isFinite(n)) ? null : n;
+  };
+  const findByName = (act, name) => {
+    const k = norm(name);
+    for (const id in act) { if (norm(act[id].nombre) === k) return id; }
+    return null;
+  };
+  // Una tabla: activos en filas, meses en columnas
+  const parseGrid = (rows) => {
+    let hr = -1, cols = null;
+    for (let i = 0; i < rows.length && i < 20; i++) {
+      const r = rows[i] || [], c = {}; let n = 0;
+      for (let j = 0; j < r.length; j++) { const mi = monthIdx(r[j]); if (mi >= 0 && !(mi in c)) { c[mi] = j; n++; } }
+      if (n >= 6) { hr = i; cols = c; break; }
+    }
+    if (hr < 0) return null;
+    let cat = catOf(rows[hr][0]) || 'acciones', aportes = null, afterTot = false;
+    const assets = [];
+    for (let i = hr + 1; i < rows.length; i++) {
+      const r2 = rows[i] || [], nm = r2[0] == null ? '' : String(r2[0]).trim();
+      if (!nm) continue;
+      const cc = catOf(nm);
+      if (cc) { cat = cc; afterTot = false; continue; }
+      const ns = norm(nm), vals = []; let any = false;
+      for (let m = 0; m < 12; m++) { const v = (m in cols) ? cellNum(r2[cols[m]]) : null; vals.push(v); if (v != null) any = true; }
+      if (/^(aporte|pusiste|puse)/.test(ns)) { aportes = vals; continue; }
+      if (/^(total|ganancia|rendimiento|rindieron|diferencia|variacion)/.test(ns)) { afterTot = true; continue; }
+      if (afterTot) continue;
+      assets.push({ nombre: nm, cat, vals, any });
+    }
+    if (!assets.length && !aportes) return null;
+    return { assets, aportes };
+  };
+  const parseCsv = (text) => {
+    text = text.replace(/^\uFEFF/, '');
+    const first = text.split(/\r?\n/, 1)[0] || '';
+    let sep = ';', best = -1;
+    [';', '\t', ','].forEach((ch) => { const c = first.split(ch).length - 1; if (c > best) { best = c; sep = ch; } });
+    const rows = []; let row = [], cur = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text.charAt(i);
+      if (q) { if (ch === '"') { if (text.charAt(i + 1) === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+      else if (ch === '"') q = true;
+      else if (ch === sep) { row.push(cur); cur = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text.charAt(i + 1) === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
+      else cur += ch;
+    }
+    if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+    return rows;
+  };
+  const decodeText = (buf) => {
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { return new TextDecoder('windows-1252').decode(buf); }
+  };
+  const loadXlsx = () => new Promise((res, rej) => {
+    if (window.XLSX) return res(window.XLSX);
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    sc.onload = () => (window.XLSX ? res(window.XLSX) : rej(new Error('x')));
+    sc.onerror = () => rej(new Error('x'));
+    document.head.appendChild(sc);
+  });
+  const fsize = (b) => (b < 1024 ? b + ' B' : b < 1048576 ? fmt0.format(b / 1024) + ' KB' : fmt1.format(b / 1048576) + ' MB');
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+  // Armar el estado resultante (igual que la app de inversiones) a partir de lo cargado + lo importado
+  const buildFromJson = (o, mode, cur) => {
+    const ap = o.aportesPorAnio && typeof o.aportesPorAnio === 'object' ? o.aportesPorAnio : (o.aportes ? { '2026': o.aportes } : {});
+    const inc = { activos: clone(o.activos), aportes: clone(ap), dolar: (o.dolar && typeof o.dolar.valor === 'number') ? clone(o.dolar) : null, meta: (o.meta && typeof o.meta === 'object') ? clone(o.meta) : null, ahorros: (o.ahorros && typeof o.ahorros === 'object') ? clone(o.ahorros) : {} };
+    const ns = { activos: clone(cur.activos), aportes: clone(cur.aportes), dolar: cur.dolar ? clone(cur.dolar) : null, meta: cur.meta ? clone(cur.meta) : null, ahorros: clone(cur.ahorros) };
+    if (mode === 'rep') { ns.activos = inc.activos; ns.aportes = inc.aportes; if (inc.dolar) ns.dolar = inc.dolar; if (inc.meta) ns.meta = inc.meta; }
+    else {
+      Object.keys(inc.activos).forEach((id) => {
+        const a = inc.activos[id], eid = ns.activos[id] ? id : findByName(ns.activos, a.nombre);
+        if (!eid) { ns.activos[id] = a; return; }
+        const e = ns.activos[eid], map = {};
+        (e.lecturas || []).forEach((r) => { map[r.f] = r.v; });
+        (a.lecturas || []).forEach((r) => { map[r.f] = r.v; });
+        e.lecturas = Object.keys(map).sort().map((f) => ({ f, v: map[f] }));
+        const ys = {}; (e.anios || []).concat(a.anios || []).forEach((y) => { ys[y] = 1; });
+        e.anios = Object.keys(ys).map(Number).sort(byNum);
+      });
+      Object.keys(inc.aportes).forEach((y) => {
+        const src = inc.aportes[y] || {}, dst = ns.aportes[y] || (ns.aportes[y] = { m: {}, inicio: null });
+        dst.m = dst.m || {};
+        Object.keys(src.m || {}).forEach((k) => { dst.m[k] = src.m[k]; });
+        if (typeof dst.inicio !== 'number' && typeof src.inicio === 'number') dst.inicio = src.inicio;
+      });
+      if (!ns.dolar && inc.dolar) ns.dolar = inc.dolar;
+      if (!ns.meta && inc.meta) ns.meta = inc.meta;
+    }
+    // Los ahorros ahora son viajes: solo se completan los que falten (después se convierten desde Modo Viaje)
+    Object.keys(inc.ahorros).forEach((id) => { if (!ns.ahorros[id]) ns.ahorros[id] = inc.ahorros[id]; });
+    return ns;
+  };
+  const buildFromTab = (parts, mode, cur, impYear) => {
+    const ns = { activos: clone(cur.activos), aportes: clone(cur.aportes), dolar: cur.dolar, meta: cur.meta, ahorros: cur.ahorros };
+    const dn = new Date(), cy = dn.getFullYear(), cm = dn.getMonth(), years = {};
+    const partYear = (p) => p.y || impYear;
+    parts.forEach((p) => { years[partYear(p)] = 1; });
+    if (mode === 'rep') {
+      Object.keys(years).forEach((y) => {
+        Object.keys(ns.activos).forEach((id) => {
+          const a = ns.activos[id];
+          a.lecturas = (a.lecturas || []).filter((r) => r.f.indexOf(y + '-') !== 0);
+          a.anios = (a.anios || []).filter((x) => String(x) !== y);
+        });
+        const old = ns.aportes[y];
+        ns.aportes[y] = { m: {}, inicio: old && typeof old.inicio === 'number' ? old.inicio : null };
+      });
+    }
+    parts.forEach((p) => {
+      const y = partYear(p);
+      p.res.assets.forEach((it) => {
+        let id = findByName(ns.activos, it.nombre), a;
+        if (id) a = ns.activos[id];
+        else {
+          const base = slug(it.nombre); let k = 2; id = base;
+          while (ns.activos[id]) id = base + '-' + (k++);
+          let ord = 0; Object.keys(ns.activos).forEach((i) => { const x = ns.activos[i]; if (x.categoria === it.cat && (x.orden || 0) > ord) ord = x.orden; });
+          a = ns.activos[id] = { nombre: it.nombre, categoria: it.cat, orden: ord + 1, lecturas: [], anios: [] };
+        }
+        a.lecturas = a.lecturas || [];
+        it.vals.forEach((v, m) => {
+          if (v == null) return;
+          const pre = y + '-' + pad(m + 1);
+          a.lecturas = a.lecturas.filter((r) => r.f.indexOf(pre) !== 0);
+          a.lecturas.push({ f: (y === cy && m === cm) ? localISO0(dn) : pre + '-' + pad(new Date(y, m + 1, 0).getDate()), v });
+        });
+        a.lecturas.sort((x, z) => (x.f < z.f ? -1 : x.f > z.f ? 1 : 0));
+        if ((a.anios || []).indexOf(y) < 0) a.anios = (a.anios || []).concat([y]).sort(byNum);
+      });
+      if (p.res.aportes) {
+        const d = ns.aportes[y] || (ns.aportes[y] = { m: {}, inicio: null });
+        d.m = d.m || {};
+        p.res.aportes.forEach((v, m) => { if (v != null) d.m[pad(m + 1)] = v; });
+      }
+    });
+    return ns;
+  };
+  // Diferencias entre lo que hay y lo que quedaría: operaciones para guardar y para deshacer
+  const diffOps = (cur, ns) => {
+    const ops = [], undo = [];
+    const cols = [['activos', 'activos'], ['aportes', 'aportes'], ['ahorros', 'ahorros']];
+    cols.forEach(([key, col]) => {
+      const a = cur[key] || {}, b = ns[key] || {};
+      Object.keys(b).forEach((id) => {
+        if (id in a) { if (!same(a[id], b[id])) { ops.push({ type: 'set', col, id, obj: b[id] }); undo.push({ type: 'set', col, id, obj: a[id] }); } }
+        else { ops.push({ type: 'set', col, id, obj: b[id] }); undo.push({ type: 'delete', col, id }); }
+      });
+      if (key !== 'ahorros') {
+        Object.keys(a).forEach((id) => { if (!(id in b)) { ops.push({ type: 'delete', col, id }); undo.push({ type: 'set', col, id, obj: a[id] }); } });
+      }
+    });
+    ['dolar', 'meta'].forEach((id) => {
+      if (ns[id] && !same(cur[id], ns[id])) {
+        ops.push({ type: 'set', col: 'config', id, obj: ns[id] });
+        undo.push(cur[id] ? { type: 'set', col: 'config', id, obj: cur[id] } : { type: 'delete', col: 'config', id });
+      }
+    });
+    return { ops, undo };
+  };
+
+  const saveFile = (name, text, type, notify) => {
+    const bl = new Blob([text], { type }), u = URL.createObjectURL(bl), a = document.createElement('a');
+    a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 2000);
+    if (notify) notify('Se descargó ' + name);
+  };
+
+  // ---------- Hoja: importar datos ----------
+  const ImportSheet = ({ isDarkMode, cur, years, defaultYear, onClose, applyOps, toastUndo, btn, btn2 }) => {
+    const dark = isDarkMode, tx = dark ? 'text-white' : 'text-gray-900', sub = dark ? 'text-slate-400' : 'text-gray-500';
+    const [imp, setImp] = useState(null);
+    const [mode, setMode] = useState('sum');
+    const [sure, setSure] = useState(false);
+    const [year, setYear] = useState(defaultYear);
+    const [msg, setMsg] = useState('');
+    const [over, setOver] = useState(false);
+    const fileRef = useRef(null);
+    const partYear = (p) => p.y || year;
+    const fail = (t) => { setMsg(t); if (fileRef.current) fileRef.current.value = ''; };
+
+    const readImport = (file) => {
+      const name = file.name || 'archivo', ext = (name.split('.').pop() || '').toLowerCase();
+      setMsg('Leyendo…');
+      const finishTab = (parts, label) => {
+        if (!parts.length) { fail('No encontré una tabla con los meses (Enero a Diciembre). Usá el mismo formato que «Exportar CSV»: activos en filas y meses en columnas.'); return; }
+        setImp({ kind: 'tab', name, size: file.size, label, parts }); setMode('sum'); setSure(false); setYear(defaultYear); setMsg('');
+      };
+      const rd = new FileReader();
+      rd.onerror = () => fail('No se pudo leer el archivo.');
+      rd.onload = () => {
+        const buf = rd.result;
+        try {
+          if (ext === 'json') {
+            let o; try { o = JSON.parse(decodeText(buf)); } catch (e) { fail('El archivo no se puede leer como copia de seguridad.'); return; }
+            if (!validBackup(o)) { fail('Ese .json no es una copia de la app de inversiones.'); return; }
+            setImp({ kind: 'json', name, size: file.size, label: 'Copia de seguridad', json: o }); setMode('sum'); setSure(false); setMsg('');
+            return;
+          }
+          if (/^(xlsx|xls|xlsm|xlsb|ods)$/.test(ext)) {
+            loadXlsx().then((X) => {
+              const wb = X.read(buf, { type: 'array' }), parts = [];
+              wb.SheetNames.forEach((sn) => {
+                const res = parseGrid(X.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: null }));
+                const ym = String(sn).match(/(20\d\d)/);
+                if (res) parts.push({ label: sn, y: ym ? Number(ym[1]) : null, res });
+              });
+              finishTab(parts, 'Excel · ' + wb.SheetNames.length + (wb.SheetNames.length === 1 ? ' hoja' : ' hojas'));
+            }).catch(() => fail('No pude leer el Excel. Revisá que tengas internet o guardalo como .csv.'));
+            return;
+          }
+          const res2 = parseGrid(parseCsv(decodeText(buf)));
+          finishTab(res2 ? [{ label: name, y: null, res: res2 }] : [], 'CSV');
+        } catch (e) { fail('No pude leer ese archivo.'); }
+      };
+      rd.readAsArrayBuffer(file);
+    };
+
+    // Resumen de lo que trae el archivo
+    let summary = null;
+    if (imp && imp.kind === 'tab') {
+      const sm = { years: {}, assets: 0, nuevos: 0, meses: {}, aportes: 0, rows: [] };
+      imp.parts.forEach((p) => {
+        const y = partYear(p); sm.years[y] = 1;
+        p.res.assets.forEach((it) => {
+          sm.assets++;
+          const ex = !!findByName(cur.activos, it.nombre); if (!ex) sm.nuevos++;
+          let n = 0, last = null;
+          it.vals.forEach((v, m) => { if (v != null) { n++; last = v; sm.meses[y + '-' + m] = 1; } });
+          sm.rows.push({ n: it.nombre, y, ex, k: n, last });
+        });
+        if (p.res.aportes) p.res.aportes.forEach((v) => { if (v != null) sm.aportes++; });
+      });
+      summary = sm;
+    } else if (imp && imp.kind === 'json') {
+      const o = imp.json, ys = {}, ap = o.aportesPorAnio && typeof o.aportesPorAnio === 'object' ? o.aportesPorAnio : {};
+      let nuevos = 0;
+      Object.keys(o.activos).forEach((id) => {
+        const a = o.activos[id];
+        if (!cur.activos[id] && !findByName(cur.activos, a.nombre)) nuevos++;
+        (a.lecturas || []).forEach((r) => { ys[r.f.slice(0, 4)] = 1; });
+        (a.anios || []).forEach((y) => { ys[y] = 1; });
+      });
+      Object.keys(ap).forEach((y) => { ys[y] = 1; });
+      const yl = Object.keys(ys).sort();
+      summary = { activos: Object.keys(o.activos).length, nuevos, ahorros: o.ahorros && typeof o.ahorros === 'object' ? Object.keys(o.ahorros).length : 0, anios: yl.length ? (yl.length === 1 ? yl[0] : yl[0] + '–' + yl[yl.length - 1]) : '—' };
+    }
+
+    const go = () => {
+      if (!imp) return;
+      if (mode === 'rep' && !sure) { setSure(true); return; }
+      let ns;
+      try { ns = imp.kind === 'json' ? buildFromJson(imp.json, mode, cur) : buildFromTab(imp.parts, mode, cur, year); }
+      catch (e) { setMsg('No se pudo importar ese archivo.'); return; }
+      const { ops, undo } = diffOps(cur, ns);
+      if (!ops.length) { setMsg('No hay nada nuevo para importar: todo ya estaba cargado.'); return; }
+      applyOps(ops);
+      onClose();
+      toastUndo('Datos importados', () => applyOps(undo));
+    };
+
+    const stat = (v, l) => <div key={l} className={`${dark ? 'bg-slate-800' : 'bg-gray-50'} rounded-xl p-2.5 text-center flex-1 min-w-[4.5rem]`}><b className={`block text-lg ${tx}`}>{String(v)}</b><span className={`text-[10px] ${sub}`}>{l}</span></div>;
+    const tabYears = summary && imp.kind === 'tab' ? Object.keys(summary.years).sort() : [];
+    const repT = imp && imp.kind === 'json' ? 'Reemplazar mis inversiones' : 'Reemplazar ' + (tabYears.length === 1 ? 'el año ' : 'los años ') + tabYears.join(', ');
+    const repD = imp && imp.kind === 'json' ? 'Borra tus activos y aportes actuales y deja solo lo del archivo. Tus viajes y ahorros no se tocan.' : 'Borra lo cargado en ' + (tabYears.length === 1 ? 'ese año' : 'esos años') + ' y deja lo del archivo. Los demás años no se tocan.';
+
+    return (
+      <Sheet isDarkMode={dark} title="Importar datos" subtitle={imp ? 'Revisá lo que encontré antes de guardarlo.' : 'Traé tus inversiones desde un archivo.'} onClose={onClose}>
+        <div className="space-y-4">
+          <input ref={fileRef} type="file" className="hidden" accept=".xlsx,.xls,.xlsm,.ods,.csv,.tsv,.txt,.json,application/json,text/csv"
+            onChange={(e) => { if (e.target.files && e.target.files[0]) readImport(e.target.files[0]); }} />
+          {!imp ? (
+            <>
+              <button type="button" onClick={() => fileRef.current && fileRef.current.click()}
+                onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
+                onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) readImport(f); }}
+                className={`w-full border-2 border-dashed rounded-2xl p-6 text-center space-y-1 ${over ? 'border-blue-500' : (dark ? 'border-slate-700' : 'border-gray-300')} ${dark ? 'bg-slate-800/50' : 'bg-gray-50'}`}>
+                <b className={`block text-sm ${tx}`}>Elegí un archivo o arrastralo acá</b>
+                <span className={`block text-xs ${sub}`}>Excel, CSV o copia de seguridad</span>
+                <span className={`block text-[11px] font-mono ${sub}`}>.xlsx · .csv · .json</span>
+              </button>
+              <p className={`text-xs ${sub}`}>Para Excel y CSV uso el mismo formato que «Exportar CSV»: un activo por fila y los meses (Enero a Diciembre) en columnas. Si el Excel tiene una hoja por año (2024, 2025…), cada una se carga en su año. Antes de guardar vas a ver una vista previa.</p>
+            </>
+          ) : (
+            <>
+              <div className={`${dark ? 'bg-slate-800' : 'bg-gray-50'} rounded-xl p-3 flex items-center justify-between gap-3`}>
+                <div className="min-w-0">
+                  <p className={`text-sm font-bold truncate ${tx}`}>{imp.name}</p>
+                  <p className={`text-xs ${sub}`}>{imp.label} · {fsize(imp.size)}</p>
+                </div>
+                <button type="button" onClick={() => { setImp(null); setMsg(''); setSure(false); if (fileRef.current) fileRef.current.value = ''; }} className="text-xs font-bold text-blue-500 shrink-0">Cambiar</button>
+              </div>
+              {imp.kind === 'tab' && imp.parts.some((p) => !p.y) && (
+                <div>
+                  <label className={lblCls(dark)}>¿De qué año son estos valores?</label>
+                  <select value={year} onChange={(e) => setYear(Number(e.target.value))} className={fieldCls(dark)}>
+                    {years.map((y) => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+              )}
+              {imp.kind === 'json' ? (
+                <>
+                  <div className="flex gap-2 flex-wrap">{stat(summary.activos, 'Activos')}{stat(summary.nuevos, 'Nuevos')}{stat(summary.anios, 'Años')}</div>
+                  {summary.ahorros > 0 && <p className={`text-xs ${sub}`}>Trae {summary.ahorros} {summary.ahorros === 1 ? 'ahorro' : 'ahorros'}: no se ven en Inversiones, aparecen en Modo Viaje para convertirlos en viajes.</p>}
+                </>
+              ) : (
+                <>
+                  <div className="flex gap-2 flex-wrap">{stat(summary.assets, 'Activos')}{stat(summary.nuevos, 'Nuevos')}{stat(Object.keys(summary.meses).length, 'Meses con valores')}{summary.aportes > 0 && stat(summary.aportes, 'Aportes')}</div>
+                  <div className="space-y-1">
+                    {summary.rows.slice(0, 8).map((r, i) => (
+                      <div key={i} className="flex justify-between gap-2 text-xs">
+                        <span className={`truncate ${tx}`}>{r.n}{!r.ex && <span className="ml-1.5 text-[10px] font-bold text-green-500">Nuevo</span>}</span>
+                        <span className={`shrink-0 ${sub}`}>{tabYears.length > 1 ? r.y + ' · ' : ''}{r.k} {r.k === 1 ? 'mes' : 'meses'}{r.last != null ? ' · ' + money(r.last) : ''}</span>
+                      </div>
+                    ))}
+                    {summary.rows.length > 8 && <p className={`text-xs ${sub}`}>y {summary.rows.length - 8} más…</p>}
+                  </div>
+                </>
+              )}
+              <div className="space-y-2">
+                <label className={`flex gap-3 items-start rounded-xl p-3 border ${mode === 'sum' ? 'border-blue-500 bg-blue-500/10' : (dark ? 'border-slate-700' : 'border-gray-200')}`}>
+                  <input type="radio" name="im-mode" className="mt-1 accent-blue-600" checked={mode === 'sum'} onChange={() => { setMode('sum'); setSure(false); }} />
+                  <span><b className={`block text-sm ${tx}`}>Sumar a lo que ya tengo (recomendado)</b><span className={`text-xs ${sub}`}>Agrega lo nuevo y actualiza los meses que coinciden. No borra nada.</span></span>
+                </label>
+                <label className={`flex gap-3 items-start rounded-xl p-3 border ${mode === 'rep' ? 'border-red-500 bg-red-500/10' : (dark ? 'border-slate-700' : 'border-gray-200')}`}>
+                  <input type="radio" name="im-mode" className="mt-1 accent-red-600" checked={mode === 'rep'} onChange={() => { setMode('rep'); setSure(false); }} />
+                  <span><b className={`block text-sm ${tx}`}>{repT}</b><span className={`text-xs ${sub}`}>{repD}</span></span>
+                </label>
+              </div>
+            </>
+          )}
+          {msg && <p className="text-xs text-orange-500 font-medium" role="alert">{msg}</p>}
+          <div className="flex gap-2">
+            <button onClick={onClose} className={btn2}>Cancelar</button>
+            {imp && <button onClick={go} className={mode === 'rep' && sure ? 'bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-5 rounded-xl text-sm shadow-md flex-1' : `${btn} flex-1`}>{mode === 'rep' ? (sure ? 'Tocá otra vez para reemplazar' : 'Reemplazar') : 'Importar'}</button>}
+          </div>
+        </div>
+      </Sheet>
+    );
+  };
+
   // ---------- Hoja: un activo (nombre, tipo, valores, vendido, eliminar) ----------
   const AssetSheet = ({ isDarkMode, asset, year, years, onClose, writeAsset, deleteAsset, toastUndo, notify, btn, btn2 }) => {
     const a = asset;
@@ -821,11 +1184,6 @@
     const [data, setData] = useState({ activos: {}, aportes: {}, ahorros: {}, dolar: null, meta: null });
     const [loaded, setLoaded] = useState(false);
     const [error, setError] = useState('');
-    const [imp, setImp] = useState(null); // { json, resumen }
-    const [importMsg, setImportMsg] = useState('');
-    const [importing, setImporting] = useState(false);
-    const [showImport, setShowImport] = useState(false);
-    const fileRef = useRef(null);
 
     const card = `${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border`;
     const txt = isDarkMode ? 'text-white' : 'text-gray-900';
@@ -861,12 +1219,15 @@
     const writeAporte = (y, o) => (baseRef ? safe(baseRef.collection('aportes').doc(String(y)).set(cleanObj(o))) : Promise.resolve());
     const applyOps = (ops) => {
       if (!baseRef) return;
-      const b = firebase.firestore().batch();
-      ops.forEach((o) => {
-        const ref = baseRef.collection(o.col).doc(o.id);
-        if (o.type === 'set') { const obj = cleanObj(o.obj); delete obj.id; b.set(ref, obj); } else b.delete(ref);
-      });
-      safe(b.commit());
+      const db = firebase.firestore();
+      for (let k = 0; k < ops.length; k += 400) {
+        const b = db.batch();
+        ops.slice(k, k + 400).forEach((o) => {
+          const ref = baseRef.collection(o.col).doc(o.id);
+          if (o.type === 'set') { const obj = cleanObj(o.obj); delete obj.id; b.set(ref, obj); } else b.delete(ref);
+        });
+        safe(b.commit());
+      }
     };
 
     const model = useMemo(() => buildModel(data.activos, data.aportes, ym.y), [data.activos, data.aportes, ym.y]);
@@ -941,6 +1302,26 @@
       if (raw.trim()) { v = parseNum(raw); if (!isFinite(v)) { showToast('Escribí un número válido'); return; } }
       if (v !== (typeof ya.inicio === 'number' ? ya.inicio : null)) writeAporte(y, { m: ya.m || {}, inicio: v });
     };
+    // --- Exportar ---
+    const exportYearCsv = () => {
+      const M = model, L2 = [], numc = (v) => (v == null ? '' : String(Math.round(v * 100) / 100).replace('.', ','));
+      const qf = (v) => (/[;"\r\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : v); // nombres con ; o comillas no rompen el CSV
+      L2.push(['Acciones'].concat(MESC).concat(['', '', '']).join(';'));
+      CATS.forEach((c, ci) => {
+        const rows = M.list.filter((a) => a.categoria === c[0]);
+        if (ci > 0) { L2.push(''); L2.push(c[1] + ';'.repeat(15)); }
+        rows.forEach((a) => { L2.push([qf(a.nombre)].concat(M.vals[a.id].map((r) => (r ? numc(r.v) : ''))).join(';')); });
+      });
+      L2.push('');
+      L2.push(['Total del mes'].concat(M.totals.map(numc)).join(';'));
+      L2.push(['Aporte del mes'].concat(M.ap.map(numc)).join(';'));
+      L2.push(['Ganancia del mes'].concat(M.gains.map(numc)).join(';'));
+      saveFile('Inversiones' + ym.y + '.csv', '\uFEFF' + L2.join('\r\n'), 'text/csv;charset=utf-8', notify);
+    };
+    const exportBackup = () => {
+      const d = new Date();
+      saveFile('inversiones-copia-' + localISO0(d) + '.json', JSON.stringify({ version: 2, exportado: d.toISOString(), activos: data.activos, aportesPorAnio: data.aportes, dolar: data.dolar || null, meta: data.meta || null, ahorros: data.ahorros || {} }, null, 1), 'application/json', notify);
+    };
     const btnS = btn.replace('py-2.5 px-5', 'py-2 px-3');
     const btn2S = btn2.replace('py-2.5 px-5', 'py-2 px-3');
 
@@ -980,98 +1361,6 @@
       return { total, ultimaFecha, activos: vigentes.length, vendidos: list.length - vigentes.length };
     }, [data.activos]);
 
-    // --- Importar copia (.json) de la app de inversiones anterior ---
-    const readFile = (file) => {
-      setImportMsg('');
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          const json = JSON.parse(String(reader.result).replace(/^\uFEFF/, ''));
-          if (!validBackup(json)) { setImp(null); setImportMsg('Ese archivo no parece una copia de la app de inversiones.'); return; }
-          const ap = json.aportes && !json.aportesPorAnio ? { '2026': json.aportes } : (json.aportesPorAnio || {});
-          const years = {};
-          Object.keys(json.activos).forEach((id) => {
-            (json.activos[id].lecturas || []).forEach((r) => { years[r.f.slice(0, 4)] = 1; });
-          });
-          Object.keys(ap).forEach((y) => { years[y] = 1; });
-          const yl = Object.keys(years).sort();
-          setImp({
-            json: { ...json, aportesPorAnio: ap },
-            resumen: {
-              activos: Object.keys(json.activos).length,
-              ahorros: json.ahorros && typeof json.ahorros === 'object' ? Object.keys(json.ahorros).length : 0,
-              anios: yl.length ? (yl.length === 1 ? yl[0] : `${yl[0]}–${yl[yl.length - 1]}`) : '—'
-            }
-          });
-        } catch (e) { setImp(null); setImportMsg('No se pudo leer el archivo.'); }
-        if (fileRef.current) fileRef.current.value = '';
-      };
-      reader.onerror = () => setImportMsg('No se pudo leer el archivo.');
-      reader.readAsText(file);
-    };
-
-    const doImport = async () => {
-      if (!imp || !authUser || !firebaseReady()) return;
-      setImporting(true);
-      setImportMsg('');
-      try {
-        const db = firebase.firestore();
-        const base = db.collection('users').doc(authUser.uid);
-        const inc = imp.json;
-        const ops = []; // { ref, obj }
-
-        // Activos: si ya existe (mismo id o mismo nombre) se suman las lecturas; si no, se crea
-        const byName = {};
-        Object.keys(data.activos).forEach((id) => { byName[norm(data.activos[id].nombre)] = id; });
-        Object.keys(inc.activos).forEach((id) => {
-          const a = clone(inc.activos[id]);
-          const eid = data.activos[id] ? id : byName[norm(a.nombre)];
-          if (!eid) { ops.push({ ref: base.collection('activos').doc(id), obj: a }); return; }
-          const e = clone(data.activos[eid]);
-          const map = {};
-          (e.lecturas || []).forEach((r) => { map[r.f] = r.v; });
-          (a.lecturas || []).forEach((r) => { map[r.f] = r.v; });
-          e.lecturas = Object.keys(map).sort().map((f) => ({ f, v: map[f] }));
-          const ys = {};
-          (e.anios || []).concat(a.anios || []).forEach((y) => { ys[y] = 1; });
-          e.anios = Object.keys(ys).map(Number).sort((x, y) => x - y);
-          ops.push({ ref: base.collection('activos').doc(eid), obj: e });
-        });
-
-        // Aportes por año: se completan meses faltantes
-        Object.keys(inc.aportesPorAnio || {}).forEach((y) => {
-          const src = inc.aportesPorAnio[y] || {};
-          const dst = data.aportes[y] ? clone(data.aportes[y]) : { m: {}, inicio: null };
-          dst.m = dst.m || {};
-          Object.keys(src.m || {}).forEach((k) => { dst.m[k] = src.m[k]; });
-          if (typeof dst.inicio !== 'number' && typeof src.inicio === 'number') dst.inicio = src.inicio;
-          ops.push({ ref: base.collection('aportes').doc(String(y)), obj: dst });
-        });
-
-        // Ahorros: solo los que todavía no existen (la unión con metas/viajes viene en la parte 4)
-        Object.keys(inc.ahorros || {}).forEach((id) => {
-          if (!data.ahorros[id]) ops.push({ ref: base.collection('ahorros').doc(id), obj: clone(inc.ahorros[id]) });
-        });
-
-        // Config: dólar y meta solo si no hay
-        if (!data.dolar && inc.dolar && typeof inc.dolar.valor === 'number') ops.push({ ref: base.collection('config').doc('dolar'), obj: clone(inc.dolar) });
-        if (!data.meta && inc.meta && typeof inc.meta === 'object') ops.push({ ref: base.collection('config').doc('meta'), obj: clone(inc.meta) });
-
-        for (let i = 0; i < ops.length; i += 400) {
-          const batch = db.batch();
-          ops.slice(i, i + 400).forEach((o) => batch.set(o.ref, JSON.parse(JSON.stringify(o.obj))));
-          await batch.commit();
-        }
-        setImp(null);
-        setImportMsg('Listo: se importaron tus inversiones.');
-      } catch (e) {
-        setImportMsg(e && e.code === 'permission-denied'
-          ? 'Firestore no deja guardar todavía: falta actualizar las reglas (ver el aviso de arriba).'
-          : 'No se pudo importar: ' + ((e && e.message) || 'error'));
-      }
-      setImporting(false);
-    };
-
     // --- Estados sin sesión / sin Firebase ---
     if (!firebaseReady()) {
       return (
@@ -1091,7 +1380,6 @@
     }
 
     const vacio = loaded && !error && Object.keys(data.activos).length === 0;
-    const importAbierto = vacio || showImport || !!imp || !!importMsg;
 
     return (
       <div className="space-y-4">
@@ -1351,34 +1639,22 @@
           );
         })()}
 
-        {/* Importar */}
-        {!importAbierto && (
-          <button onClick={() => setShowImport(true)} className={`w-full text-center text-xs font-bold py-2 ${sub}`}>Importar otra copia de seguridad…</button>
-        )}
-        {importAbierto && <div className={`${card} space-y-3`}>
+        {/* Datos: importar y exportar */}
+        <div className={`${card} space-y-3`}>
           <div>
-            <p className={`font-bold text-sm ${txt}`}>Traer datos de la app de inversiones</p>
-            <p className={`text-xs mt-1 ${sub}`}>
-              En esa app: Ajustes → copia de seguridad (descarga un archivo <code>.json</code>). Elegilo acá. No pisa nada de lo que ya tengas cargado: solo agrega lo que falta.
-            </p>
+            <p className={`font-bold text-sm ${txt}`}>Datos</p>
+            <p className={`text-xs mt-1 ${sub}`}>Traé tus inversiones desde Excel, CSV o una copia de seguridad, o llevate lo que tenés cargado.</p>
           </div>
-          <input ref={fileRef} type="file" accept=".json,application/json" className="hidden"
-            onChange={(e) => { if (e.target.files && e.target.files[0]) readFile(e.target.files[0]); }} />
-          {!imp && <button onClick={() => fileRef.current && fileRef.current.click()} className={btn2}>Elegir archivo…</button>}
-          {imp && (
-            <div className="space-y-3">
-              <div className={`${isDarkMode ? 'bg-slate-800' : 'bg-gray-50'} rounded-xl p-3 text-xs ${txt}`}>
-                El archivo trae <b>{imp.resumen.activos}</b> activos y datos de <b>{imp.resumen.anios}</b>.{imp.resumen.ahorros > 0 && <> También trae {imp.resumen.ahorros} {imp.resumen.ahorros === 1 ? 'ahorro' : 'ahorros'}: no se muestran acá, aparecen en Modo Viaje para convertirlos en viajes.</>}
-              </div>
-              <div className="flex gap-2">
-                <button disabled={importing} onClick={doImport} className={`${btn} ${importing ? 'opacity-60' : ''}`}>{importing ? 'Importando…' : 'Importar'}</button>
-                <button disabled={importing} onClick={() => { setImp(null); setImportMsg(''); }} className={btn2}>Cancelar</button>
-              </div>
-            </div>
-          )}
-          {importMsg && <p className={`text-xs font-medium ${importMsg.startsWith('Listo') ? 'text-green-500' : 'text-orange-500'}`}>{importMsg}</p>}
-        </div>}
-
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => setSheet({ kind: 'import' })} className={btn2S}>Importar datos…</button>
+            <button onClick={() => exportYearCsv()} className={btn2S}>Exportar {ym.y} (CSV)</button>
+            <button onClick={() => exportBackup()} className={btn2S}>Copia de seguridad</button>
+          </div>
+        </div>
+        {sheet && sheet.kind === 'import' && (
+          <ImportSheet isDarkMode={isDarkMode} cur={data} years={years} defaultYear={ym.y} onClose={() => setSheet(null)}
+            applyOps={applyOps} toastUndo={toastUndo} btn={btn} btn2={btn2} />
+        )}
         {sheet && sheet.kind === 'asset' && data.activos[sheet.id] && (
           <AssetSheet key={sheet.id} isDarkMode={isDarkMode} asset={{ ...data.activos[sheet.id], id: sheet.id }} year={ym.y} years={years}
             onClose={() => setSheet(null)} writeAsset={writeAsset} deleteAsset={deleteAsset} toastUndo={toastUndo} notify={notify} btn={btn} btn2={btn2} />

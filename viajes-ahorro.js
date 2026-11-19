@@ -291,8 +291,7 @@
         categories: cats.map((c) => ({ id: c.id, name: c.name, budget: c.budget })),
         transactions: txs,
         importedFromAhorro: id,
-        currency: a.moneda === 'USD' ? 'USD' : 'ARS',
-        archived: !!a.archivado
+        currency: a.moneda === 'USD' ? 'USD' : 'ARS'
       },
       stats: { cats: cats.length, ah, gas, retiros, movs: txs.length, usd: a.moneda === 'USD', archivado: !!a.archivado }
     };
@@ -334,10 +333,16 @@
 
     const hide = () => setHidden(true);
 
+    // Los viajes que estaban archivados se importan ya en "Archivados" (el archivado es personal, vive en tu usuario)
+    const userUpdate = (codes, archivedCodes) => ({
+      tripIds: firebase.firestore.FieldValue.arrayUnion(...codes),
+      ...(archivedCodes.length ? { archivedTripIds: firebase.firestore.FieldValue.arrayUnion(...archivedCodes) } : {})
+    });
+
     const doImport = async () => {
       if (!chosen.length || busy) return;
       setBusy(true); setMsg('');
-      const db = firebase.firestore(), codes = [], ok = {};
+      const db = firebase.firestore(), codes = [], archivedCodes = [], ok = {};
       try {
         for (const p of chosen) {
           const code = `${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-2)}`.toUpperCase();
@@ -350,13 +355,14 @@
             updatedAt: Date.now()
           });
           codes.push(code); ok[p.id] = 1;
+          if (p.conv.stats.archivado) archivedCodes.push(code);
         }
-        await db.collection('users').doc(authUser.uid).set({ tripIds: firebase.firestore.FieldValue.arrayUnion(...codes) }, { merge: true });
+        await db.collection('users').doc(authUser.uid).set(userUpdate(codes, archivedCodes), { merge: true });
         setDone((d) => ({ ...d, ...ok }));
         setOpen(false); setSel(null);
       } catch (e) {
         setDone((d) => ({ ...d, ...ok }));
-        if (codes.length) { try { await db.collection('users').doc(authUser.uid).set({ tripIds: firebase.firestore.FieldValue.arrayUnion(...codes) }, { merge: true }); } catch (e2) { /* noop */ } }
+        if (codes.length) { try { await db.collection('users').doc(authUser.uid).set(userUpdate(codes, archivedCodes), { merge: true }); } catch (e2) { /* noop */ } }
         setMsg(`No se pudo terminar${codes.length ? ` (se crearon ${codes.length})` : ''}: ${(e && e.message) || 'error'}`);
       }
       setBusy(false);

@@ -21,11 +21,6 @@
     const L = (a.lecturas || []).slice().sort((x, y) => (x.f < y.f ? -1 : x.f > y.f ? 1 : 0));
     return L.length ? L[L.length - 1] : null;
   };
-  const soldLabel = (a) => {
-    if (!a.vendido) return '';
-    const [y, m] = String(a.vendido).split('-').map(Number);
-    return isFinite(y) && isFinite(m) ? `${MES[m - 1] || ''} ${y}` : '';
-  };
 
   const validBackup = (o) => {
     if (!o || typeof o !== 'object' || !o.activos || typeof o.activos !== 'object') return false;
@@ -39,6 +34,7 @@
 
   // ---------- Utilidades ----------
   const pad = (n) => String(n).padStart(2, '0');
+  const localISO0 = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const fmt2 = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 });
   const fmt1 = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 });
   const cleanObj = (o) => JSON.parse(JSON.stringify(o));
@@ -135,6 +131,40 @@
     }
     return null;
   };
+  // ---------- Avisos: valores que faltan ----------
+  const missingNames = (activos, y, m) => {
+    const out = [];
+    Object.keys(activos).forEach((id) => {
+      const a = activos[id];
+      if (!visibleIn(a, y) || !heldIn(a, m, y) || monthVal(a, m, y)) return;
+      const pp = m === 0 ? (y - 1) + '-12' : y + '-' + pad(m);
+      if ((a.lecturas || []).some((r) => r.f.indexOf(pp) === 0)) out.push(a.nombre);
+    });
+    return out;
+  };
+  const hasMonthData = (activos, y, m) => Object.keys(activos).some((id) => !!monthVal(activos[id], m, y));
+  const namesText = (arr) => arr.slice(0, 4).join(', ') + (arr.length > 4 ? ` y ${arr.length - 4} más` : '');
+  // Mismos criterios que la app de inversiones: mes anterior incompleto los primeros días,
+  // mes actual sin cargar al final del mes y aporte del mes sin cargar
+  const avisosList = (activos, aportesAll, now) => {
+    const y = now.getFullYear(), m = now.getMonth(), d = now.getDate(), L = [];
+    const py = m === 0 ? y - 1 : y, pm = m === 0 ? 11 : m - 1;
+    const apSet = (yy, mm) => typeof ((aportesAll[yy] || {}).m || {})[pad(mm + 1)] === 'number';
+    if (d <= 7 && hasMonthData(activos, py, pm)) {
+      const mp = missingNames(activos, py, pm);
+      if (mp.length) L.push({ k: 'v', y: py, m: pm, b: 'Ir a ' + MES[pm], t: <>Quedaron sin valor en {MES[pm]}: <b>{namesText(mp)}</b>. El total de ese mes puede verse más bajo de lo real.</> });
+      if (!apSet(py, pm)) L.push({ k: 'ap', y: py, m: pm, b: 'Cargar aporte', t: <>No cargaste cuánto aportaste en <b>{MES[pm]}</b>. Si no pusiste nada, escribí 0.</> });
+    }
+    if (d >= 25) {
+      const mc = missingNames(activos, y, m);
+      if (mc.length) L.push({ k: 'v', y, m, b: 'Cargar valores', t: <>Se termina {MES[m]} y todavía no cargaste el valor de: <b>{namesText(mc)}</b>.</> });
+    }
+    if (!apSet(y, m) && (d >= 15 || hasMonthData(activos, y, m))) {
+      L.push({ k: 'ap', y, m, b: 'Cargar aporte', t: <>Todavía no cargaste cuánto aportaste en <b>{MES[m]}</b>. Si no pusiste nada, escribí 0.</> });
+    }
+    return L;
+  };
+
   const defaultDate = (m, y) => {
     const t = new Date();
     const cur = t.getFullYear() === y ? t.getMonth() : -1;
@@ -556,7 +586,6 @@
     const [checks, setChecks] = useState({});
     const [newName, setNewName] = useState('');
     const [newCat, setNewCat] = useState(CATS[0][0]);
-    const [msg, setMsg] = useState('');
     const txt = isDarkMode ? 'text-white' : 'text-gray-900';
     const sub = isDarkMode ? 'text-slate-400' : 'text-gray-500';
     const list = Object.keys(activos).map((id) => ({ id, a: activos[id] }))
@@ -636,7 +665,6 @@
             </div>
             <p className={`text-xs mt-2 ${sub}`}>Se agrega a {year}. Después cargale el valor tocándolo en el mes.</p>
           </div>
-          {msg && <p className="text-xs text-orange-500 font-medium">{msg}</p>}
           <div className="flex gap-2">
             <button onClick={onClose} className={btn2}>Cancelar</button>
             <button onClick={save} className={btn}>Guardar</button>
@@ -796,6 +824,7 @@
     const [imp, setImp] = useState(null); // { json, resumen }
     const [importMsg, setImportMsg] = useState('');
     const [importing, setImporting] = useState(false);
+    const [showImport, setShowImport] = useState(false);
     const fileRef = useRef(null);
 
     const card = `${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border`;
@@ -853,6 +882,18 @@
       return Object.keys(set).map(Number).filter((y) => y >= 2000 && y <= 2100).sort(byNum);
     }, [data.activos, data.aportes, ym.y]);
     const pal = palette(isDarkMode);
+    const hoyKey = 'inv-avisos-' + localISO0(new Date());
+    const [avisosOk, setAvisosOk] = useState(() => { try { return localStorage.getItem(hoyKey) === '1'; } catch (e) { return false; } });
+    const avisos = useMemo(() => (loaded && Object.keys(data.activos).length ? avisosList(data.activos, data.aportes, new Date()) : []), [loaded, data.activos, data.aportes]);
+    const ocultarAvisos = () => { try { localStorage.setItem(hoyKey, '1'); } catch (e) { /* noop */ } setAvisosOk(true); };
+    const irAviso = (a) => {
+      setYm({ y: a.y, m: a.m });
+      if (a.k === 'v') { setSheet({ kind: 'wizard' }); return; }
+      setTimeout(() => {
+        const el = document.querySelector(`input[aria-label="Lo que pusiste en ${MES[a.m]}"]`);
+        if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => { try { el.focus(); } catch (e) { /* noop */ } }, 350); }
+      }, 80);
+    };
     const yearRows = useMemo(() => years.map((y) => yearStats(data.activos, data.aportes, y)).filter(Boolean), [years, data.activos, data.aportes]);
     const evoPts = useMemo(() => seriesAll(data.activos, data.aportes, years), [years, data.activos, data.aportes]);
     const panelRef = useRef(null);
@@ -929,22 +970,15 @@
 
     // --- Resumen ---
     const resumen = useMemo(() => {
-      const list = Object.keys(data.activos).map((id) => ({ id, ...data.activos[id] }));
+      const list = Object.keys(data.activos).map((id) => data.activos[id]);
       const vigentes = list.filter((a) => !a.vendido);
-      let total = 0;
-      let ultimaFecha = '';
+      let total = 0, ultimaFecha = '';
       vigentes.forEach((a) => {
         const r = lastReading(a);
         if (r) { total += r.v; if (r.f > ultimaFecha) ultimaFecha = r.f; }
       });
-      const grupos = CATS.map(([id, nombre]) => {
-        const items = list.filter((a) => a.categoria === id).map((a) => ({ a, r: lastReading(a) }))
-          .sort((x, y) => (x.a.orden || 0) - (y.a.orden || 0) || String(x.a.nombre).localeCompare(String(y.a.nombre)));
-        const sub = items.filter((i) => !i.a.vendido && i.r).reduce((s, i) => s + i.r.v, 0);
-        return { id, nombre, items, subtotal: sub };
-      }).filter((g) => g.items.length);
-      return { total, ultimaFecha, activos: vigentes.length, vendidos: list.length - vigentes.length, grupos, ahorros: Object.keys(data.ahorros).length };
-    }, [data]);
+      return { total, ultimaFecha, activos: vigentes.length, vendidos: list.length - vigentes.length };
+    }, [data.activos]);
 
     // --- Importar copia (.json) de la app de inversiones anterior ---
     const readFile = (file) => {
@@ -1057,6 +1091,7 @@
     }
 
     const vacio = loaded && !error && Object.keys(data.activos).length === 0;
+    const importAbierto = vacio || showImport || !!imp || !!importMsg;
 
     return (
       <div className="space-y-4">
@@ -1081,6 +1116,21 @@
             {resumen.ultimaFecha ? ` · último valor cargado: ${resumen.ultimaFecha.split('-').reverse().join('/')}` : ''}
           </p>
         </div>
+
+        {/* Avisos: valores que faltan */}
+        {!avisosOk && avisos.length > 0 && (
+          <div className="space-y-2" role="status">
+            {avisos.map((a, i) => (
+              <div key={a.k + a.y + a.m} className="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-3 text-xs text-orange-400 font-medium space-y-2">
+                <p>{a.t}</p>
+                <div className="flex gap-2">
+                  <button onClick={() => irAviso(a)} className="bg-orange-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs">{a.b}</button>
+                  {i === 0 && <button onClick={ocultarAvisos} className="font-bold py-1.5 px-3 rounded-lg text-xs border border-orange-500/30">Ocultar por hoy</button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Indicadores del año */}
         {loaded && model.latest >= 0 && (() => {
@@ -1302,7 +1352,10 @@
         })()}
 
         {/* Importar */}
-        <div className={`${card} space-y-3`}>
+        {!importAbierto && (
+          <button onClick={() => setShowImport(true)} className={`w-full text-center text-xs font-bold py-2 ${sub}`}>Importar otra copia de seguridad…</button>
+        )}
+        {importAbierto && <div className={`${card} space-y-3`}>
           <div>
             <p className={`font-bold text-sm ${txt}`}>Traer datos de la app de inversiones</p>
             <p className={`text-xs mt-1 ${sub}`}>
@@ -1315,7 +1368,7 @@
           {imp && (
             <div className="space-y-3">
               <div className={`${isDarkMode ? 'bg-slate-800' : 'bg-gray-50'} rounded-xl p-3 text-xs ${txt}`}>
-                El archivo trae <b>{imp.resumen.activos}</b> activos, <b>{imp.resumen.ahorros}</b> ahorros y datos de <b>{imp.resumen.anios}</b>.
+                El archivo trae <b>{imp.resumen.activos}</b> activos y datos de <b>{imp.resumen.anios}</b>.{imp.resumen.ahorros > 0 && <> También trae {imp.resumen.ahorros} {imp.resumen.ahorros === 1 ? 'ahorro' : 'ahorros'}: no se muestran acá, aparecen en Modo Viaje para convertirlos en viajes.</>}
               </div>
               <div className="flex gap-2">
                 <button disabled={importing} onClick={doImport} className={`${btn} ${importing ? 'opacity-60' : ''}`}>{importing ? 'Importando…' : 'Importar'}</button>
@@ -1324,7 +1377,7 @@
             </div>
           )}
           {importMsg && <p className={`text-xs font-medium ${importMsg.startsWith('Listo') ? 'text-green-500' : 'text-orange-500'}`}>{importMsg}</p>}
-        </div>
+        </div>}
 
         {sheet && sheet.kind === 'asset' && data.activos[sheet.id] && (
           <AssetSheet key={sheet.id} isDarkMode={isDarkMode} asset={{ ...data.activos[sheet.id], id: sheet.id }} year={ym.y} years={years}

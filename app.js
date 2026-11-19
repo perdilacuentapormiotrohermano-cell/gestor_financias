@@ -1126,7 +1126,7 @@ const BudgetPlansView = ({ isDarkMode, categories, budgetPlans, setBudgetPlans, 
   );
 };
 
-const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setActiveTab, onCreateTrip, onJoinTrip, onLeaveTrip, onDeleteTrip, onAddTripTransaction, onDeleteTripTransaction, onUpdateTrip, activeTripId, onToggleActiveTrip }) => {
+const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setActiveTab, onCreateTrip, onJoinTrip, onLeaveTrip, onDeleteTrip, onAddTripTransaction, onDeleteTripTransaction, onUpdateTrip, activeTripId, onToggleActiveTrip, archivedTripIds, onArchiveTrip }) => {
   const [mode, setMode] = useState('list'); // 'list' | 'create' | 'edit' | 'detail'
   const [viewingTripId, setViewingTripId] = useState(null);
 
@@ -1166,6 +1166,8 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
   };
 
   const [joinCode, setJoinCode] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState('');
 
@@ -1626,27 +1628,16 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
   }
 
   // ---- Vista Lista de Viajes ----
-  return (
-    <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-right-4 duration-300`}>
-      <div className="flex justify-between items-center mb-2 mt-2">
-        <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>✈️ Modo Viaje</h1>
-        <button onClick={() => setMode('create')} className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md transition-colors">
-          + Crear Viaje
-        </button>
-      </div>
-      <p className={`text-xs mb-5 ${labelCls}`}>Fondo, presupuesto e historial exclusivos por viaje. Invitá a otras cuentas para cargar gastos juntos.</p>
-
-      {tripsCheckDone && window.TripAhorrosImport && (
-        <window.TripAhorrosImport authUser={authUser} trips={trips} isDarkMode={isDarkMode} formatMoney={formatMoney} cardCls={cardCls} labelCls={labelCls} />
-      )}
-
-      <div className="space-y-3 mb-6">
-        {!tripsCheckDone ? (
-          <div className={`text-center ${labelCls} ${cardCls} text-sm p-6 rounded-2xl border`}>Cargando viajes...</div>
-        ) : trips.length === 0 ? (
-          <div className={`text-center ${labelCls} ${cardCls} text-sm p-8 rounded-3xl border`}>Todavía no creaste ni te uniste a ningún viaje.</div>
-        ) : (
-          trips.map(t => {
+  const isArchivedTrip = (t) => (archivedTripIds || []).includes(t.id) || t.archived === true;
+  const visibleTrips = trips.filter(t => !isArchivedTrip(t));
+  const archivedTrips = trips.filter(isArchivedTrip);
+  const toggleArchive = async (tripId, archive) => {
+    if (!onArchiveTrip) return;
+    setArchiveBusy(true);
+    try { await onArchiveTrip(tripId, archive); } catch (e) { /* noop */ }
+    setArchiveBusy(false);
+  };
+  const renderTripCard = (t) => {
             const txs = t.transactions || [];
             const spent = txs.filter(tx => tx.type === 'gasto').reduce((s, tx) => s + parseFloat(tx.amount || 0), 0);
             const aportado = txs.filter(tx => tx.type === 'aporte').reduce((s, tx) => s + parseFloat(tx.amount || 0), 0);
@@ -1654,6 +1645,7 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
             const budget = parseFloat(t.budget || 0);
             const pct = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
             const isActive = activeTripId === t.id;
+            const isArch = isArchivedTrip(t);
             const isOwnerOfThis = t.ownerUid === authUser.uid;
             return (
               <div key={t.id} className={`relative ${isDarkMode ? 'bg-slate-900 border-amber-600/30' : 'bg-white border-amber-200'} rounded-3xl p-5 shadow-sm border space-y-2 transition-all ${isActive ? 'ring-2 ring-amber-500' : ''}`}>
@@ -1689,6 +1681,16 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
                 )}
 
                 <div className="flex flex-wrap items-center gap-2 pt-2">
+                  {isArch ? (
+                    <button
+                      type="button"
+                      disabled={archiveBusy}
+                      onClick={() => toggleArchive(t.id, false)}
+                      className={`text-[11px] font-bold px-3 py-1.5 rounded-full ${isDarkMode ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-blue-50 text-blue-600 border border-blue-100'}`}
+                    >
+                      Desarchivar
+                    </button>
+                  ) : (
                   <button
                     type="button"
                     onClick={() => onToggleActiveTrip(t.id)}
@@ -1696,6 +1698,7 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
                   >
                     {isActive ? 'Desactivar' : 'Activar'}
                   </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => { setViewingTripId(t.id); setMode('detail'); }}
@@ -1703,6 +1706,17 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
                   >
                     Ver
                   </button>
+                  {!isArch && (
+                    <button
+                      type="button"
+                      disabled={archiveBusy}
+                      onClick={() => toggleArchive(t.id, true)}
+                      className={`text-[11px] font-bold px-3 py-1.5 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-300 border border-slate-700' : 'bg-gray-100 text-gray-600 border border-gray-200'}`}
+                      title="Guardar en Archivados"
+                    >
+                      Archivar
+                    </button>
+                  )}
                   {isOwnerOfThis && (
                     <button
                       type="button"
@@ -1730,9 +1744,52 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
                 </div>
               </div>
             );
-          })
+  };
+
+  return (
+    <div className={`p-4 pb-32 min-h-full ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-50 text-gray-900'} animate-in fade-in slide-in-from-right-4 duration-300`}>
+      <div className="flex justify-between items-center mb-2 mt-2">
+        <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>✈️ Modo Viaje</h1>
+        <button onClick={() => setMode('create')} className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md transition-colors">
+          + Crear Viaje
+        </button>
+      </div>
+      <p className={`text-xs mb-5 ${labelCls}`}>Fondo, presupuesto e historial exclusivos por viaje. Invitá a otras cuentas para cargar gastos juntos.</p>
+
+      {tripsCheckDone && window.TripAhorrosImport && (
+        <window.TripAhorrosImport authUser={authUser} trips={trips} isDarkMode={isDarkMode} formatMoney={formatMoney} cardCls={cardCls} labelCls={labelCls} />
+      )}
+
+      <div className="space-y-3 mb-6">
+        {!tripsCheckDone ? (
+          <div className={`text-center ${labelCls} ${cardCls} text-sm p-6 rounded-2xl border`}>Cargando viajes...</div>
+        ) : trips.length === 0 ? (
+          <div className={`text-center ${labelCls} ${cardCls} text-sm p-8 rounded-3xl border`}>Todavía no creaste ni te uniste a ningún viaje.</div>
+        ) : visibleTrips.length === 0 ? (
+          <div className={`text-center ${labelCls} ${cardCls} text-sm p-6 rounded-3xl border`}>No tenés viajes en curso. Los que archivaste están más abajo, en Archivados.</div>
+        ) : (
+          visibleTrips.map(renderTripCard)
         )}
       </div>
+
+      {archivedTrips.length > 0 && (
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={() => setShowArchived(v => !v)}
+            className={`w-full flex items-center justify-between py-2 text-xs font-bold uppercase tracking-wider ${labelCls}`}
+            aria-expanded={showArchived}
+          >
+            <span>🗄️ Archivados ({archivedTrips.length})</span>
+            <span>{showArchived ? '▲' : '▼'}</span>
+          </button>
+          {showArchived && (
+            <div className="space-y-3 mt-2">
+              {archivedTrips.map(t => <div key={t.id} className="opacity-75">{renderTripCard(t)}</div>)}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className={`${cardCls} rounded-2xl p-4 shadow-sm border`}>
         <p className={`text-xs font-bold uppercase tracking-wider mb-2 ${labelCls}`}>¿Te invitaron a un viaje?</p>
@@ -1785,6 +1842,10 @@ function ExpenseTrackerApp() {
 
   // --- Modo Viaje (fondos compartidos por viaje, invitando a otras cuentas) ---
   const [tripIds, setTripIds] = useState([]); // viajes de los que soy miembro (propios o a los que me uní)
+  const [archivedTripIds, setArchivedTripIds] = useState([]); // viajes que archivé (solo para mí)
+  const [homeView, setHomeView] = useState('personal'); // Inicio: 'personal' (azul) o 'viaje' (naranja)
+  const [homeDir, setHomeDir] = useState(null); // dirección del último deslizado, para la animación
+  const homeSwipe = useRef(null);
   const [tripsCheckDone, setTripsCheckDone] = useState(false);
   const [trips, setTrips] = useState([]); // documentos completos de cada viaje (metadata + transacciones del viaje)
   const tripUnsubscribersRef = useRef({});
@@ -1972,6 +2033,7 @@ function ExpenseTrackerApp() {
   useEffect(() => {
     if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) {
       setTripIds([]);
+      setArchivedTripIds([]);
       setTripsCheckDone(true);
       return;
     }
@@ -1979,6 +2041,7 @@ function ExpenseTrackerApp() {
     const unsubscribe = db.collection('users').doc(authUser.uid).onSnapshot((snap) => {
       const data = snap.exists ? (snap.data() || {}) : {};
       setTripIds(data.tripIds || []);
+      setArchivedTripIds(data.archivedTripIds || []);
       setTripsCheckDone(true);
     }, () => setTripsCheckDone(true));
     return () => unsubscribe();
@@ -2393,6 +2456,22 @@ function ExpenseTrackerApp() {
       transactions: firebase.firestore.FieldValue.arrayUnion(newTx),
       updatedAt: Date.now()
     });
+  };
+
+  // Archivar es personal: cada persona del viaje decide si lo ve en su lista o lo guarda en "Archivados"
+  const handleArchiveTrip = async (tripId, archive) => {
+    if (!authUser || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) throw { code: 'firebase-no-config' };
+    const db = firebase.firestore();
+    const FV = firebase.firestore.FieldValue;
+    await db.collection('users').doc(authUser.uid).set({
+      archivedTripIds: archive ? FV.arrayUnion(tripId) : FV.arrayRemove(tripId)
+    }, { merge: true });
+    if (archive && settings.activeTripId === tripId) setSettings(s => ({ ...s, activeTripId: null }));
+    if (!archive) {
+      // viajes importados que venían marcados como archivados en el propio viaje
+      const t = trips.find(x => x.id === tripId);
+      if (t && t.archived === true) { try { await db.collection('trips').doc(tripId).update({ archived: false }); } catch (e) { /* noop */ } }
+    }
   };
 
   const handleDeleteTripTransaction = async (tripId, txToDelete) => {
@@ -3187,6 +3266,27 @@ function ExpenseTrackerApp() {
     const activeTrip = trips.find(t => t.id === settings.activeTripId) || null;
     const tripCalc = (activeTrip && window.TripSavings) ? window.TripSavings.calc(activeTrip) : null;
     const tripSaving = !!(tripCalc && tripCalc.phase === 'ahorro' && tripCalc.meta > 0);
+    // Con un viaje activo, el Inicio se desliza entre lo personal (azul) y lo del viaje (naranja)
+    const showTrip = !!activeTrip && homeView === 'viaje';
+    const homeAnim = activeTrip && homeDir ? (homeDir === 'left' ? 'home-in-left' : 'home-in-right') : '';
+    const switchHome = (view, dir) => {
+      if (view === homeView) return;
+      setHomeDir(dir);
+      setHomeView(view);
+      setTimeout(() => setHomeDir(null), 400);
+    };
+    const onHomeTouchStart = (e) => {
+      const t = e.touches && e.touches[0];
+      homeSwipe.current = t ? { x: t.clientX, y: t.clientY } : null;
+    };
+    const onHomeTouchEnd = (e) => {
+      const st = homeSwipe.current; homeSwipe.current = null;
+      if (!st || !activeTrip) return;
+      const t = e.changedTouches && e.changedTouches[0]; if (!t) return;
+      const dx = t.clientX - st.x, dy = t.clientY - st.y;
+      if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return; // tiene que ser un deslizado horizontal claro
+      switchHome(homeView === 'personal' ? 'viaje' : 'personal', dx < 0 ? 'left' : 'right');
+    };
     const [quickTrip, setQuickTrip] = useState(null); // { type: 'gasto' | 'aporte' }
     const [quickAmount, setQuickAmount] = useState('');
     const [quickDesc, setQuickDesc] = useState('');
@@ -3315,8 +3415,9 @@ function ExpenseTrackerApp() {
           </div>
         )}
 
-        {!activeTrip && (
-        <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-6 text-white shadow-lg shadow-blue-500/20 relative overflow-hidden">
+        <div onTouchStart={onHomeTouchStart} onTouchEnd={onHomeTouchEnd} style={{ touchAction: 'pan-y' }}>
+        {!showTrip && (
+        <div className={`bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-6 text-white shadow-lg shadow-blue-500/20 relative overflow-hidden ${homeAnim}`}>
           <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 rounded-full bg-white opacity-10"></div>
           <p className="text-blue-100 text-sm font-medium mb-1">Balance Total (Ingresos - Gastos)</p>
           <h2 className="text-3xl font-bold tracking-tight mb-6">{formatCurrency(globalBalance)}</h2>
@@ -3339,8 +3440,8 @@ function ExpenseTrackerApp() {
         </div>
         )}
 
-        {activeTrip && (
-          <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-3xl p-5 text-white shadow-lg relative overflow-hidden">
+        {showTrip && (
+          <div className={`bg-gradient-to-br from-amber-500 to-orange-600 rounded-3xl p-5 text-white shadow-lg relative overflow-hidden ${homeAnim}`}>
             <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 rounded-full bg-white opacity-10"></div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0">
@@ -3420,6 +3521,16 @@ function ExpenseTrackerApp() {
             </div>
           </div>
         )}
+
+        {activeTrip && (
+          <div className="flex justify-center items-center gap-2 mt-3">
+            <button type="button" aria-label="Mi dinero" onClick={() => switchHome('personal', 'right')}
+              className={`h-2 rounded-full transition-all ${homeView === 'personal' ? 'w-5 bg-blue-500' : `w-2 ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}`}></button>
+            <button type="button" aria-label={`Viaje: ${activeTrip.name}`} onClick={() => switchHome('viaje', 'left')}
+              className={`h-2 rounded-full transition-all ${homeView === 'viaje' ? 'w-5 bg-orange-500' : `w-2 ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}`}></button>
+          </div>
+        )}
+        </div>
 
         {(() => {
           const activeBudgetPlan = budgetPlans.find(p => p.status === 'activo');
@@ -3502,16 +3613,16 @@ function ExpenseTrackerApp() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-              {activeTrip ? (tripSaving ? `🏦 Ahorro del viaje: ${activeTrip.name}` : `✈️ Gastos del viaje: ${activeTrip.name}`) : 'Presupuestos / Categorías'}
+              {showTrip ? (tripSaving ? `🏦 Ahorro del viaje: ${activeTrip.name}` : `✈️ Gastos del viaje: ${activeTrip.name}`) : 'Presupuestos / Categorías'}
             </h3>
-            {activeTrip && (
-              <button onClick={() => setSettings(s => ({ ...s, activeTripId: null }))} className="text-xs font-bold text-blue-500 shrink-0">
+            {showTrip && (
+              <button onClick={() => switchHome('personal', 'right')} className="text-xs font-bold text-blue-500 shrink-0">
                 Ver mis categorías
               </button>
             )}
           </div>
           <div className="space-y-3">
-            {activeTrip ? (
+            {showTrip ? (
               (activeTrip.categories || []).map(cat => {
                 const spentReal = (activeTrip.transactions || []).filter(tx => tx.type === 'gasto' && tx.category === cat.id).reduce((s, tx) => s + parseFloat(tx.amount || 0), 0);
                 // Antes de la salida se muestra lo ahorrado por categoría; durante el viaje, lo gastado
@@ -3981,11 +4092,11 @@ function ExpenseTrackerApp() {
             <h1 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Registro</h1>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            {menuItems.map(item => (
+            {menuItems.map((item, idx) => (
               <button
                 key={item.id}
                 onClick={() => setSubTab(item.id)}
-                className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} border rounded-3xl p-6 shadow-sm flex flex-col items-center justify-center gap-3 text-center hover:shadow-md active:scale-[0.97] transition-all`}
+                className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} border rounded-3xl p-6 shadow-sm flex flex-col items-center justify-center gap-3 text-center hover:shadow-md active:scale-[0.97] transition-all ${menuItems.length % 2 === 1 && idx === menuItems.length - 1 ? 'col-span-2' : ''}`}
               >
                 <div className={`w-14 h-14 rounded-full flex items-center justify-center ${item.color}`}>
                   {item.icon}
@@ -4576,6 +4687,8 @@ function ExpenseTrackerApp() {
               onDeleteTripTransaction={handleDeleteTripTransaction}
               onUpdateTrip={handleUpdateTrip}
               activeTripId={settings.activeTripId || null}
+              archivedTripIds={archivedTripIds}
+              onArchiveTrip={handleArchiveTrip}
               onToggleActiveTrip={(tripId) => setSettings(s => ({ ...s, activeTripId: s.activeTripId === tripId ? null : tripId }))}
             />
           </div>
@@ -5392,6 +5505,8 @@ function ExpenseTrackerApp() {
               onDeleteTripTransaction={handleDeleteTripTransaction}
               onUpdateTrip={handleUpdateTrip}
               activeTripId={settings.activeTripId || null}
+              archivedTripIds={archivedTripIds}
+              onArchiveTrip={handleArchiveTrip}
               onToggleActiveTrip={(tripId) => setSettings(s => ({ ...s, activeTripId: s.activeTripId === tripId ? null : tripId }))}
             />
           )}
@@ -5416,7 +5531,7 @@ function ExpenseTrackerApp() {
               </div>
             </button>
 
-            <button onClick={() => { setActiveTab('history'); setSelectedCardId(null); }} className="flex flex-col items-center justify-center w-12 gap-1">
+            <button onClick={() => { setActiveTab('history'); setSubTab('menu'); setSelectedCardId(null); }} className="flex flex-col items-center justify-center w-12 gap-1">
               <ListIcon active={activeTab === 'history'} />
               <span className={`text-[10px] font-medium ${activeTab === 'history' ? 'text-blue-500' : (isDarkMode ? 'text-slate-400' : 'text-gray-500')}`}>Registro</span>
             </button>

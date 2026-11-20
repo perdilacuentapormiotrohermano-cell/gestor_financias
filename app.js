@@ -1133,9 +1133,11 @@ const BudgetPlansView = ({ isDarkMode, categories, budgetPlans, setBudgetPlans, 
   );
 };
 
-const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setActiveTab, onCreateTrip, onJoinTrip, onLeaveTrip, onDeleteTrip, onAddTripTransaction, onDeleteTripTransaction, onUpdateTrip, activeTripId, onToggleActiveTrip, archivedTripIds, onArchiveTrip }) => {
-  const [mode, setMode] = useState('list'); // 'list' | 'create' | 'edit' | 'detail'
-  const [viewingTripId, setViewingTripId] = useState(null);
+const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setActiveTab, onCreateTrip, onJoinTrip, onLeaveTrip, onDeleteTrip, onAddTripTransaction, onDeleteTripTransaction, onUpdateTrip, activeTripId, onToggleActiveTrip, archivedTripIds, onArchiveTrip, openTripRef }) => {
+  // openTripRef: si trae el id de un viaje, se abre directo en su detalle (una sola vez)
+  const [mode, setMode] = useState(() => (openTripRef && openTripRef.current) ? 'detail' : 'list'); // 'list' | 'create' | 'edit' | 'detail'
+  const [viewingTripId, setViewingTripId] = useState(() => (openTripRef && openTripRef.current) || null);
+  useEffect(() => { if (openTripRef) openTripRef.current = null; }, []);
 
   const blankCats = () => [
     { id: `tc_0_${Date.now()}`, name: 'Alojamiento', budget: '' },
@@ -1864,6 +1866,7 @@ function ExpenseTrackerApp() {
   const [homeDir, setHomeDir] = useState(null); // dirección del último deslizado, para la animación
   const homeSwipe = useRef(null);
   const [tripsCheckDone, setTripsCheckDone] = useState(false);
+  const openTripRef = useRef(null); // viaje a abrir directo al entrar a Modo Viaje
   const [trips, setTrips] = useState([]); // documentos completos de cada viaje (metadata + transacciones del viaje)
   const tripUnsubscribersRef = useRef({});
 
@@ -3718,7 +3721,7 @@ function ExpenseTrackerApp() {
         <div>
           <div className="flex justify-between items-end mb-4">
             <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Actividad Reciente</h3>
-            <button onClick={() => { setSubTab(showTrip ? 'viajes' : 'historial'); setActiveTab('history'); }} className="text-blue-500 text-sm font-medium">Ver todo</button>
+            <button onClick={() => { if (showTrip) openTripRef.current = activeTrip.id; setSubTab(showTrip ? 'viajes' : 'historial'); setActiveTab('history'); }} className="text-blue-500 text-sm font-medium">Ver todo</button>
           </div>
           {showTrip ? (
             <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800 divide-slate-800' : 'bg-white border-gray-100 divide-gray-50'} rounded-3xl shadow-sm border divide-y overflow-hidden`}>
@@ -4806,6 +4809,7 @@ function ExpenseTrackerApp() {
         {subTab === 'viajes' && (
           <div className="-mx-4 -mt-2">
             <TripsView
+              openTripRef={openTripRef}
               isDarkMode={isDarkMode}
               settings={settings}
               authUser={authUser}

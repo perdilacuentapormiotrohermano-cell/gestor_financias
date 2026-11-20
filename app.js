@@ -4134,9 +4134,9 @@ function ExpenseTrackerApp() {
       });
     }, [transactions, filterPeriod, filterCategory, filterType, selectedMonth]);
 
-    // Filtro "Viajes": mis movimientos cargados con "Nuevo Movimiento" + los que cargué directo en el viaje (solo lectura, sin tocar cuentas)
+    // Con "Tipo Mov." en todos (o en "Viajes"): se suman a la lista mis movimientos cargados directo en el viaje (solo lectura, sin tocar cuentas)
     const historyItems = useMemo(() => {
-      if (filterType !== 'viajes') return filteredTransactions;
+      if (filterType !== 'viajes' && filterType !== 'todos') return filteredTransactions;
       const extra = [];
       if (authUser && filterCategory === 'todos') {
         trips.forEach(trip => {
@@ -4265,7 +4265,8 @@ function ExpenseTrackerApp() {
                               <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} truncate`}>{isAporte ? 'Aporte' : (t.categoryName || 'Gasto')}</span>
                             </div>
                             <div className="mt-1.5 flex items-center gap-1 flex-wrap">
-                              <span className="text-[10px] bg-orange-500/10 text-orange-400 border border-orange-500/20 px-2 py-0.5 rounded-md font-semibold truncate max-w-[180px]">Viaje: {t.tripName}</span>
+                              <span className="text-[10px] bg-orange-500/10 text-orange-400 border border-orange-500/20 px-2 py-0.5 rounded-md font-semibold truncate max-w-[160px]">Viaje: {t.tripName}</span>
+                              <span className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-gray-400'}`}>no afecta tus cuentas</span>
                             </div>
                           </div>
                         </div>

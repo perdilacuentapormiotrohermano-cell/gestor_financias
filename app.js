@@ -1636,7 +1636,7 @@ const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setA
 
   // ---- Vista Lista de Viajes ----
   const isArchivedTrip = (t) => (archivedTripIds || []).includes(t.id) || t.archived === true;
-  const visibleTrips = trips.filter(t => !isArchivedTrip(t));
+  const visibleTrips = trips.filter(t => !isArchivedTrip(t)).sort((a, b) => (b.id === activeTripId ? 1 : 0) - (a.id === activeTripId ? 1 : 0));
   const archivedTrips = trips.filter(isArchivedTrip);
   const toggleArchive = async (tripId, archive) => {
     if (!onArchiveTrip) return;
@@ -4128,10 +4128,39 @@ function ExpenseTrackerApp() {
       return transactions.filter(t => {
         if (filterPeriod === 'mes' && !isTransactionInSelectedMonth(t.date)) return false;
         if (filterCategory !== 'todos' && t.category !== filterCategory) return false;
-        if (filterType !== 'todos' && t.type !== filterType) return false;
+        if (filterType === 'viajes') { if (!t.tripId) return false; }
+        else if (filterType !== 'todos' && t.type !== filterType) return false;
         return true;
       });
     }, [transactions, filterPeriod, filterCategory, filterType, selectedMonth]);
+
+    // Filtro "Viajes": mis movimientos cargados con "Nuevo Movimiento" + los que cargué directo en el viaje (solo lectura, sin tocar cuentas)
+    const historyItems = useMemo(() => {
+      if (filterType !== 'viajes') return filteredTransactions;
+      const extra = [];
+      if (authUser && filterCategory === 'todos') {
+        trips.forEach(trip => {
+          (trip.transactions || []).forEach(tx => {
+            if (tx.createdBy !== authUser.uid) return;
+            if (filterPeriod === 'mes' && !isTransactionInSelectedMonth(tx.date)) return;
+            const amount = parseFloat(tx.amount) || 0;
+            const linked = transactions.some(p => p.tripId === trip.id && p.date === tx.date && Math.abs((parseFloat(p.amount) || 0) - amount) < 0.01);
+            if (linked) return;
+            extra.push({
+              id: `trip_${trip.id}_${tx.id}`,
+              _trip: true,
+              tripName: trip.name,
+              type: tx.type === 'aporte' ? 'aporte' : 'gasto',
+              description: tx.description || (tx.type === 'aporte' ? 'Aporte al fondo' : 'Gasto'),
+              categoryName: ((trip.categories || []).find(c => c.id === tx.category) || {}).name || '',
+              date: tx.date,
+              amount
+            });
+          });
+        });
+      }
+      return [...filteredTransactions, ...extra].sort((x, y) => new Date(y.date) - new Date(x.date));
+    }, [filteredTransactions, filterType, filterCategory, filterPeriod, trips, transactions, authUser, selectedMonth]);
 
     if (subTab === 'menu') {
       const menuItems = [
@@ -4210,15 +4239,42 @@ function ExpenseTrackerApp() {
                   <option value="gasto">Gastos</option>
                   <option value="ahorro">Ahorros</option>
                   <option value="transferencia">Transferencias</option>
+                  <option value="viajes">Viajes</option>
                 </select>
               </div>
             </div>
 
             <div className="space-y-3">
-              {filteredTransactions.length === 0 ? (
+              {historyItems.length === 0 ? (
                 <div className={`text-center ${isDarkMode ? 'text-slate-400 bg-slate-900 border-slate-800' : 'text-gray-500 bg-white border-gray-100'} mt-10 text-sm p-8 rounded-3xl border`}>No hay movimientos con estos filtros.</div>
               ) : (
-                filteredTransactions.map(t => {
+                historyItems.map(t => {
+                  if (t._trip) {
+                    const isAporte = t.type === 'aporte';
+                    return (
+                      <div key={t.id} className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100'} rounded-2xl p-4 shadow-sm border flex justify-between items-center gap-2`}>
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${isAporte ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                            {isAporte ? <TrendingUpIcon /> : <TrendingDownIcon />}
+                          </div>
+                          <div className="min-w-0">
+                            <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'} text-base truncate`}>{t.description}</p>
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                              <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} whitespace-nowrap`}>{new Date(t.date).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}</span>
+                              <span className={`w-1 h-1 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-700' : 'bg-gray-300'}`}></span>
+                              <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'} truncate`}>{isAporte ? 'Aporte' : (t.categoryName || 'Gasto')}</span>
+                            </div>
+                            <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+                              <span className="text-[10px] bg-orange-500/10 text-orange-400 border border-orange-500/20 px-2 py-0.5 rounded-md font-semibold truncate max-w-[180px]">Viaje: {t.tripName}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <span className={`font-bold whitespace-nowrap shrink-0 ${isAporte ? 'text-emerald-500' : (isDarkMode ? 'text-white' : 'text-gray-900')}`}>
+                          {isAporte ? '+' : '-'}{formatCurrency(t.amount)}
+                        </span>
+                      </div>
+                    );
+                  }
                   const method = paymentMethods.find(m => m.id === t.methodId);
                   const destMethod = t.type === 'transferencia' ? paymentMethods.find(m => m.id === t.destMethodId) : null;
                   const category = categories.find(c => c.id === t.category);
@@ -4253,11 +4309,18 @@ function ExpenseTrackerApp() {
                                 {method?.name || '?'} → {destMethod?.name || '?'}
                               </span>
                             </div>
-                          ) : method && (
+                          ) : (method || t.tripId) && (
                             <div className="mt-1.5 flex items-center gap-1 flex-wrap">
-                              <span className={`text-[10px] ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-gray-100 text-gray-600 border-gray-200'} px-2 py-0.5 rounded-md font-semibold tracking-wide shadow-sm border`}>
-                                {method.name}
-                              </span>
+                              {method && (
+                                <span className={`text-[10px] ${isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-gray-100 text-gray-600 border-gray-200'} px-2 py-0.5 rounded-md font-semibold tracking-wide shadow-sm border`}>
+                                  {method.name}
+                                </span>
+                              )}
+                              {t.tripId && (
+                                <span className="text-[10px] bg-orange-500/10 text-orange-400 border border-orange-500/20 px-2 py-0.5 rounded-md font-semibold truncate max-w-[160px]">
+                                  Viaje: {(trips.find(x => x.id === t.tripId) || {}).name || 'viaje'}
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>

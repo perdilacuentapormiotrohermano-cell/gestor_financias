@@ -1,12 +1,12 @@
-const CACHE_NAME = 'gestor-finanzas-v62';
+const CACHE_NAME = 'gestor-finanzas-v63';
 const URLS_TO_CACHE = [
   './',
-  './index.html?v=62',
-  './app.js?v=62',
-  './inversiones.js?v=62',
-  './viajes-ahorro.js?v=62',
-  './firebase-config.js?v=62',
-  './manifest.json?v=62',
+  './index.html?v=63',
+  './app.js?v=63',
+  './inversiones.js?v=63',
+  './viajes-ahorro.js?v=63',
+  './firebase-config.js?v=63',
+  './manifest.json?v=63',
   './icon-192.png',
   './icon-512.png'
 ];

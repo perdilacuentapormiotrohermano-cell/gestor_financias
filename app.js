@@ -1134,10 +1134,13 @@ const BudgetPlansView = ({ isDarkMode, categories, budgetPlans, setBudgetPlans, 
 };
 
 const TripsView = ({ isDarkMode, settings, authUser, trips, tripsCheckDone, setActiveTab, onCreateTrip, onJoinTrip, onLeaveTrip, onDeleteTrip, onAddTripTransaction, onDeleteTripTransaction, onUpdateTrip, activeTripId, onToggleActiveTrip, archivedTripIds, onArchiveTrip, openTripRef }) => {
-  // openTripRef: si trae el id de un viaje, se abre directo en su detalle (una sola vez)
+  // openTripRef guarda el viaje que se está mirando fuera de este componente: esta pantalla se vuelve a armar
+  // cada vez que llega un cambio de la nube (por ej. al guardar o borrar un movimiento) y, sin esto, volvía a la lista.
   const [mode, setMode] = useState(() => (openTripRef && openTripRef.current) ? 'detail' : 'list'); // 'list' | 'create' | 'edit' | 'detail'
   const [viewingTripId, setViewingTripId] = useState(() => (openTripRef && openTripRef.current) || null);
-  useEffect(() => { if (openTripRef) openTripRef.current = null; }, []);
+  useEffect(() => {
+    if (openTripRef) openTripRef.current = (mode === 'detail' && viewingTripId) ? viewingTripId : null;
+  }, [mode, viewingTripId]);
 
   const blankCats = () => [
     { id: `tc_0_${Date.now()}`, name: 'Alojamiento', budget: '' },
@@ -1866,7 +1869,11 @@ function ExpenseTrackerApp() {
   const [homeDir, setHomeDir] = useState(null); // dirección del último deslizado, para la animación
   const homeSwipe = useRef(null);
   const [tripsCheckDone, setTripsCheckDone] = useState(false);
-  const openTripRef = useRef(null); // viaje a abrir directo al entrar a Modo Viaje
+  const openTripRef = useRef(null); // viaje que se está mirando en Modo Viaje (sobrevive a los re-armados de pantalla)
+  useEffect(() => {
+    // Al salir de Modo Viaje se olvida el viaje, para que la próxima entrada empiece en la lista
+    if (!(activeTab === 'history' && subTab === 'viajes')) openTripRef.current = null;
+  }, [activeTab, subTab]);
   const [trips, setTrips] = useState([]); // documentos completos de cada viaje (metadata + transacciones del viaje)
   const tripUnsubscribersRef = useRef({});
 
